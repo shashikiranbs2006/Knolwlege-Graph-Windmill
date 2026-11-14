@@ -104,6 +104,33 @@ uv run --with rdflib --with pyshacl python check_graph.py  # ontology + SHACL ch
 uv run --with rdflib --with pyshacl python check_graph.py http://127.0.0.1:8082/sparql farm_b/mapping.obda   # farm B
 ```
 
+How one question is handled (source: [docs/question_flow.mmd](docs/question_flow.mmd)):
+
+```mermaid
+flowchart TD
+  Q["Engineer types a question<br/>(one question box)"] --> CHIP{"Scope chip"}
+  CHIP -- "Auto (default)" --> DET["detect_scope reads the wording<br/>other farm named / both / each / all farms → All farms<br/>Kelmarsh 2, or no farm named → This farm (farm A)"]
+  CHIP -- "This farm" --> FARM["Scope = farm A"]
+  CHIP -- "All farms" --> CROSS["Scope = all farms"]
+  DET --> FARM
+  DET --> CROSS
+  FARM --> NAMES{"Names another farm?<br/>(Penmanshiel, farm B/C)"}
+  NAMES -- "yes" --> REFUSE["Refused before any LLM call:<br/>switch to All farms or Auto"]
+  NAMES -- "no" --> LLMF["LLM writes SPARQL<br/>every pattern inside GRAPH &lt;graph/kelmarsh&gt;"]
+  CROSS --> LLMC["LLM writes SPARQL<br/>GRAPH ?g bound from the farm registry"]
+  LLMF --> CHECK
+  LLMC --> CHECK
+  CHECK{"check(): SELECT only, LIMIT ≤ 50,<br/>no SERVICE / FROM / updates,<br/>farm scope: no other graph"}
+  CHECK -- "fails" --> RETRY["error fed back to the LLM<br/>(up to 3 attempts)"] --> CHECK
+  CHECK -- "passes" --> HUB["Run on the hub (Fuseki)"]
+  HUB -- "hub down, farm A question" --> OA["Fallback: farm A's own Ontop endpoint<br/>(answered at the farm, page says so)"]
+  HUB -- "hub down, all-farms question" --> ERR["Reports the hub is unavailable"]
+  HUB --> ROWS["Result rows"]
+  OA --> ROWS
+  ROWS --> REPLY["LLM writes the reply from the rows only<br/>labels synthetic_demo / curated_demo"]
+  REPLY --> PAGE["Page shows: scope used and why, reply,<br/>SPARQL, rows, 'at the farm' replay (farm A)"]
+```
+
 ## The two use cases
 
 **Use case 1, fault diagnosis (This farm scope).** Ask *"What usually causes high gear bearing temperature on a gearbox, and what fixed it last time?"*. The LLM writes SPARQL like [queries/farm_a_01_fault_diagnosis.rq](queries/farm_a_01_fault_diagnosis.rq), which runs on the hub inside farm A's graph; `run_hub.py --verify` checks it returns exactly what SQL on farm A's database returns. [queries/05_uc1_fault_diagnosis.rq](queries/05_uc1_fault_diagnosis.rq) is the same question at the farm, on Ontop. The alarms are real Kelmarsh events ("High temp. gear bearing 2" on Kelmarsh 2, January 2016); the alarm-to-fault confidences are illustrative demo rules (`curated_demo`); the repairs are synthetic (`synthetic_demo`). The page and the assistant's reply label each.
