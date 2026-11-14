@@ -1,0 +1,8 @@
+rule_id,message_pattern,fault_code,confidence,rationale
+R01,^High temp\. gear bearing,GearBearingOverheating,0.7,Alarm text names the symptom directly
+R02,^High temp\. gear bearing,GearboxBearingWear,0.5,Bearing overheating is a common symptom of bearing wear
+R03,^Low gearbox oil pressure,GearboxLubricationFault,0.7,Alarm text names low lubrication pressure
+R04,^Overload gear oil pump,GearboxLubricationFault,0.6,Pump overload reduces lubrication flow
+R05,^(Particle Gear Alarm|Overload gear bypass filter),GearOilContamination,0.6,Particle counter or clogged filter points to contaminated oil
+R06,^(Particle Gear Alarm|Overload gear bypass filter),GearboxBearingWear,0.3,Wear debris is one source of oil particles
+R07,^Overload generator fan,GeneratorCoolingFault,0.6,Alarm text names the generator cooling fan

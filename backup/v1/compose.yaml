@@ -1,0 +1,58 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: vkg
+      POSTGRES_USER: vkg
+      POSTGRES_PASSWORD: ${VKG_DB_PASSWORD:-vkg_demo_local}
+      TZ: UTC
+    command: ["postgres", "-c", "timezone=UTC"]
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - vkg_pgdata:/var/lib/postgresql/data
+      - ./build/import:/import:ro
+      - ./db:/db:ro
+      - ./queries:/queries:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vkg -d vkg"]
+      interval: 5s
+      retries: 20
+  ontop:
+    image: ontop/ontop:5.5.0
+    environment:
+      ONTOP_MAPPING_FILE: /input/mapping.ttl
+      ONTOP_ONTOLOGY_FILE: /input/ontology.ttl
+      ONTOP_PROPERTIES_FILE: /input/ontop.properties
+      ONTOP_DB_USER: vkg
+      ONTOP_DB_PASSWORD: ${VKG_DB_PASSWORD:-vkg_demo_local}
+      ONTOP_WAIT_FOR: db:5432
+      ONTOP_DEV_MODE: "true"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./vkg:/input:ro
+      - ./cli/jdbc/postgresql-42.7.14.jar:/opt/ontop/jdbc/postgresql-42.7.14.jar:ro
+    depends_on:
+      db:
+        condition: service_healthy
+  workbench:
+    image: python:3.14-alpine
+    command: ["python", "/app/query_workbench.py"]
+    environment:
+      ONTOP_ENDPOINT: http://ontop:8080
+      VKG_MAPPING_FILE: /input/mapping.ttl
+      VKG_ONTOLOGY_FILE: /input/ontology.ttl
+      VKG_SCHEMA_FILE: /db/schema.sql
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - ./query_workbench.py:/app/query_workbench.py:ro
+      - ./workbench.js:/app/workbench.js:ro
+      - ./vkg:/input:ro
+      - ./db/schema.sql:/db/schema.sql:ro
+    depends_on:
+      ontop:
+        condition: service_healthy
+volumes:
+  vkg_pgdata:

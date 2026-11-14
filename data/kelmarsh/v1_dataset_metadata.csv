@@ -1,0 +1,5 @@
+dataset_id,record_kind,source,source_date,owner,license,usage_note
+kelmarsh-2016,observed_source,https://doi.org/10.5281/zenodo.16807551,2025-08-12,Cubico Sustainable Investments Ltd,CC BY 4.0,Attribute Cubico and cite the Zenodo record
+v1-synthetic-maintenance,synthetic_demo,Created for this V1 project on user request,2026-11-13,V1 project team,Not specified,Demo only; do not publish or analyze as observed maintenance or confirmed faults
+v11-curated-fault-rules,curated_demo,Alarm-to-fault rules written for this demo (data/curated),2026-11-14,V1 project team,Not specified,Illustrative expert-style rules; confidence values are not validated
+v11-component-register,derived_assumption,Derived from turbine model (each Senvion MM92 has one gearbox and one generator),2026-11-14,V1 project team,Not specified,Component identities are assumed from the turbine model; they are not serial-numbered assets

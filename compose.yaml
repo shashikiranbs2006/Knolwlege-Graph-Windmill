@@ -1,0 +1,127 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: vkg
+      POSTGRES_USER: vkg
+      POSTGRES_PASSWORD: ${VKG_DB_PASSWORD:-vkg_demo_local}
+      TZ: UTC
+    command: ["postgres", "-c", "timezone=UTC"]
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - vkg_pgdata:/var/lib/postgresql/data
+      - ./build/import:/import:ro
+      - ./db:/db:ro
+      - ./queries:/queries:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vkg -d vkg"]
+      interval: 5s
+      retries: 20
+  ontop:
+    image: ontop/ontop:5.5.0
+    environment:
+      ONTOP_MAPPING_FILE: /input/mapping.ttl
+      ONTOP_ONTOLOGY_FILE: /input/ontology.ttl
+      ONTOP_PROPERTIES_FILE: /input/ontop.properties
+      ONTOP_DB_USER: vkg
+      ONTOP_DB_PASSWORD: ${VKG_DB_PASSWORD:-vkg_demo_local}
+      ONTOP_WAIT_FOR: db:5432
+      ONTOP_DEV_MODE: "true"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./vkg:/input:ro
+      - ./cli/jdbc/postgresql-42.7.14.jar:/opt/ontop/jdbc/postgresql-42.7.14.jar:ro
+    depends_on:
+      db:
+        condition: service_healthy
+  # The hub: one named graph per farm + curated knowledge (build/hub/hub.trig, from hub/build_hub.py).
+  # Needs no farm at query time, so it stays up when a farm node is down.
+  hub:
+    build: ./hub
+    ports:
+      - "127.0.0.1:3030:3030"
+    volumes:
+      - ./build/hub:/data:ro
+  # The one site: two tabs, one assistant, questions answered on the hub.
+  # No depends_on: the site starts even if a service is down, and each tab reports its own status.
+  site:
+    image: python:3.14-alpine
+    command: ["python", "/app/query_workbench.py"]
+    environment:
+      ONTOP_ENDPOINT: http://ontop:8080
+      VKG_MAPPING_FILE: /input/mapping.ttl
+      VKG_ONTOLOGY_FILE: /input/ontology.ttl
+      VKG_SCHEMA_FILE: /db/schema.sql
+      HUB_ENDPOINT: http://hub:3030/hub/sparql
+      FARM_A_ENDPOINT: http://ontop:8080/sparql
+      FARM_A_GRAPH: https://w3id.org/wind-core/data/graph/kelmarsh
+      ASSISTANT_EXAMPLES: /queries
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
+      LLM_MODEL: ${LLM_MODEL:-gemini-flash-latest}
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - ./query_workbench.py:/app/query_workbench.py:ro
+      - ./workbench.js:/app/workbench.js:ro
+      - ./assistant.py:/app/assistant.py:ro
+      - ./queries:/queries:ro
+      - ./vkg:/input:ro
+      - ./db/schema.sql:/db/schema.sql:ro
+  # ---------- Farm B node (profile "uc2"): its own database and Ontop endpoint ----------
+  db-b:
+    profiles: ["uc2"]
+    image: postgres:17
+    environment:
+      POSTGRES_DB: farmb
+      POSTGRES_USER: farmb
+      POSTGRES_PASSWORD: ${FARMB_DB_PASSWORD:-farmb_demo_local}
+      TZ: UTC
+    command: ["postgres", "-c", "timezone=UTC"]
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - farmb_pgdata:/var/lib/postgresql/data
+      - ./build/import_b:/import:ro
+      - ./farm_b:/db:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U farmb -d farmb"]
+      interval: 5s
+      retries: 20
+  ontop-b:
+    profiles: ["uc2"]
+    image: ontop/ontop:5.5.0
+    environment:
+      ONTOP_MAPPING_FILE: /input/mapping.ttl
+      ONTOP_ONTOLOGY_FILE: /shared/ontology.ttl
+      ONTOP_PROPERTIES_FILE: /input/ontop.properties
+      ONTOP_DB_USER: farmb
+      ONTOP_DB_PASSWORD: ${FARMB_DB_PASSWORD:-farmb_demo_local}
+      ONTOP_WAIT_FOR: db-b:5432
+      ONTOP_DEV_MODE: "true"
+    ports:
+      - "127.0.0.1:8082:8080"
+    volumes:
+      - ./farm_b:/input:ro
+      - ./vkg:/shared:ro
+      - ./cli/jdbc/postgresql-42.7.14.jar:/opt/ontop/jdbc/postgresql-42.7.14.jar:ro
+    depends_on:
+      db-b:
+        condition: service_healthy
+  # ---------- Optional (profile "neo4j"): farm C as an existing Neo4j graph ----------
+  neo4j:
+    profiles: ["neo4j"]
+    image: neo4j:5.26-community
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-farmc_demo_local}
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - farmc_neo4j:/data
+volumes:
+  farmc_neo4j:
+  vkg_pgdata:
+  farmb_pgdata:

@@ -1,0 +1,38 @@
+flowchart TB
+  USER(("Engineer"))
+  subgraph SITE["One site · http://127.0.0.1:8081/"]
+    T1["Tab 1 · Farm A (Kelmarsh): fault diagnosis<br/>use case 1 · scope GRAPH &lt;graph/kelmarsh&gt;"]
+    T2["Tab 2 · All farms: cross-farm learning<br/>use case 2 · scope GRAPH ?g over the registry"]
+    LLM["One assistant (assistant.py)<br/>LLM writes SPARQL · SELECT-only · LIMIT ≤ 50<br/>scope checked per tab · answers only from rows<br/>always labels synthetic_demo / curated_demo"]
+    T1 --> LLM
+    T2 --> LLM
+  end
+  subgraph HUB["Shared hub · Apache Jena Fuseki 6.2 · :3030/hub/sparql"]
+    DG["default graph<br/>wind-core ontology · farm registry<br/>fault catalogue · alarm→fault links<br/>with confidence as RDF 1.2 annotations"]
+    GA["named graph<br/>graph/kelmarsh"]
+    GB["named graph<br/>graph/penmanshiel"]
+    GC["named graph<br/>graph/farm-c (optional)"]
+  end
+  BUILD["hub/build_hub.py<br/>CONSTRUCT per class from each farm endpoint<br/>→ SHACL gate (vkg/shapes.ttl)<br/>→ load only if it conforms"]
+  subgraph FA["Farm A node · data stays here"]
+    OA["Ontop :8080<br/>virtual graph · mapping A → wind-core"]
+    DA[("PostgreSQL<br/>Kelmarsh SCADA, alarms,<br/>rules, synthetic work orders")]
+    OA --> DA
+  end
+  subgraph FB["Farm B node · data stays here"]
+    OB["Ontop :8082<br/>virtual graph · mapping B → wind-core<br/>(technician names not mapped)"]
+    DBB[("PostgreSQL<br/>Penmanshiel, different schema")]
+    OB --> DBB
+  end
+  subgraph FC["Optional farm C"]
+    NEO[("Neo4j")] --> EXP["neo4j_farm_c.py<br/>export to wind-core"]
+  end
+  USER --> SITE
+  LLM -- "SPARQL" --> HUB
+  LLM -. "fallback if the hub is down<br/>(tab 1 only, at the farm)" .-> OA
+  T1 -. "at-the-farm panel:<br/>SPARQL → mapping → SQL journey" .-> OA
+  OA -- "harvest (assets, events,<br/>diagnoses, maintenance)" --> BUILD
+  OB -- "harvest" --> BUILD
+  EXP --> BUILD
+  BUILD --> GA & GB & GC
+  SHAPES["wind-core ontology + SHACL shapes<br/>(vkg/ontology.ttl, vkg/shapes.ttl)"] -. "shared contract" .-> OA & OB & BUILD

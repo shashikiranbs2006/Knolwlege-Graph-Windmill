@@ -1,0 +1,28 @@
+flowchart TB
+  USER(("Engineer / researcher"))
+  LLM["Assistant layer<br/>Claude + tools: get_ontology · run_sparql<br/>SELECT-only · LIMIT · shows SPARQL + rows"]
+  subgraph HUB["Shared hub (project-run)"]
+    CORE["wind-core ontology (OWL 2 QL)<br/>+ SKOS fault taxonomy + SHACL shapes<br/>persistent IRIs (w3id.org)"]
+    FUS["Apache Jena Fuseki (TDB2)<br/>curated knowledge: fault ↔ symptom links<br/>confidence + provenance as RDF-star / RDF 1.2<br/>federates with SPARQL SERVICE"]
+  end
+  subgraph FA["Farm A node (e.g. Kelmarsh = today's V1)"]
+    OA["Ontop endpoint<br/>mapping A → wind-core"]
+    DA[("PostgreSQL / TimescaleDB<br/>farm A schema")]
+    OA --> DA
+  end
+  subgraph FB["Farm B node (e.g. Penmanshiel or CARE farm)"]
+    OB["Ontop endpoint<br/>mapping B → wind-core<br/>(technician column NOT mapped)"]
+    DB[("SQL DB<br/>different table/column names")]
+    OB --> DB
+  end
+  subgraph FC["Optional: farm that already runs Neo4j"]
+    NEO[("Neo4j")]
+    N10["n10s RDF export<br/>mapped to wind-core"]
+    NEO --> N10
+  end
+  USER --> LLM --> FUS
+  USER -. "direct SPARQL" .-> FUS
+  FUS -- "SERVICE" --> OA
+  FUS -- "SERVICE" --> OB
+  N10 -- "load (materialised)" --> FUS
+  CORE -. "shared vocabulary" .-> OA & OB & FUS

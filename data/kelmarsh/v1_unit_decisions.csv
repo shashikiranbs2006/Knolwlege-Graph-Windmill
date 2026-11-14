@@ -1,0 +1,4 @@
+source_file,source_column,canonical_unit,qudt_unit_iri,decision_basis
+Kelmarsh_SCADA_2016_3082.zip,Power (kW),kW,http://qudt.org/vocab/unit/KiloW,Use the SCADA column unit; the separate signal dictionary labels Power kWh incorrectly for this file
+Kelmarsh_SCADA_2016_3082.zip,Energy Export (kWh),kWh,http://qudt.org/vocab/unit/KiloW-HR,Use the SCADA column unit; this is interval energy and must remain distinct from Power
+Kelmarsh_SCADA_2016_3082.zip,Wind speed (m/s),m/s,http://qudt.org/vocab/unit/M-PER-SEC,SCADA column and signal dictionary agree

@@ -1,0 +1,585 @@
+@prefix rr: <http://www.w3.org/ns/r2rml#> .
+@prefix : <https://example.org/wind-v1/> .
+@prefix sosa: <http://www.w3.org/ns/sosa/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix qudt: <http://qudt.org/schema/qudt/> .
+@prefix time: <http://www.w3.org/2006/time#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix obda: <https://w3id.org/obda/vocabulary#> .
+
+<urn:r2rml:datasets> a rr:TriplesMap;
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT * FROM datasets"
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "usage_note";
+          rr:termType rr:Literal
+        ];
+      rr:predicate :note
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "license"
+        ];
+      rr:predicate :license
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :ownedBy;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "owner";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :recordKind;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "record_kind"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:column "source"
+        ];
+      rr:predicate :source
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "source_date";
+          rr:datatype xsd:date
+        ];
+      rr:predicate :sourceDate
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:template "https://example.org/wind-v1/dataset/{dataset_id}";
+      rr:class :Dataset;
+      rr:termType rr:IRI
+    ] .
+
+<urn:r2rml:site> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:object "Kelmarsh";
+      rr:predicate :name
+    ];
+  rr:subject <https://example.org/wind-v1/site/Kelmarsh>;
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT turbine_id FROM turbines WHERE turbine_id = 'KWF1'"
+    ] .
+
+<urn:r2rml:turbines> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "title";
+          rr:termType rr:Literal
+        ];
+      rr:predicate :name
+    ], [ a rr:PredicateObjectMap;
+      rr:object <https://example.org/wind-v1/site/Kelmarsh>;
+      rr:predicate :locatedAt
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate prov:wasDerivedFrom;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:template "https://example.org/wind-v1/dataset/{dataset_id}";
+          rr:termType rr:IRI
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :recordKind;
+      rr:object "observed_source"
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:class :WindTurbine;
+      rr:termType rr:IRI;
+      rr:template "https://example.org/wind-v1/turbine/{turbine_id}"
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT turbine_id, title, dataset_id FROM turbines"
+    ] .
+
+<urn:r2rml:streams> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate :forTurbine;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:IRI;
+          rr:template "https://example.org/wind-v1/turbine/{turbine_id}"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate prov:wasDerivedFrom;
+      rr:object <https://example.org/wind-v1/dataset/kelmarsh-2016>
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT turbine_id FROM turbines"
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:class :SCADADataStream;
+      rr:termType rr:IRI;
+      rr:template "https://example.org/wind-v1/stream/{turbine_id}"
+    ] .
+
+<urn:r2rml:sensors> a rr:TriplesMap;
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:class :Sensor;
+      rr:termType rr:IRI;
+      rr:template "https://example.org/wind-v1/sensor/{turbine_id}/{signal}"
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate sosa:observes;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:template "https://example.org/wind-v1/{signal}";
+          rr:termType rr:IRI
+        ]
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT turbine_id, signal FROM logical_sensors"
+    ] .
+
+<urn:r2rml:observations> a rr:TriplesMap;
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:template "https://example.org/wind-v1/observation/{turbine_id}/{row_number}/{signal}";
+      rr:class sosa:Observation;
+      rr:termType rr:IRI
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate sosa:hasFeatureOfInterest;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:IRI;
+          rr:template "https://example.org/wind-v1/turbine/{turbine_id}"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :recordKind;
+      rr:object "observed_source"
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :sourceFile;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "source_file"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :sourceRow;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:datatype xsd:integer;
+          rr:column "row_number"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:IRI;
+          rr:template "https://example.org/wind-v1/dataset/{dataset_id}"
+        ];
+      rr:predicate prov:wasDerivedFrom
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate sosa:resultTime;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:datatype xsd:dateTime;
+          rr:column "observed_at"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate sosa:hasSimpleResult;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:datatype xsd:double;
+          rr:column "value"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate sosa:madeBySensor;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:IRI;
+          rr:template "https://example.org/wind-v1/sensor/{turbine_id}/{signal}"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:IRI;
+          rr:template "https://example.org/wind-v1/{signal}"
+        ];
+      rr:predicate sosa:observedProperty
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :signal;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "signal";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:template "http://qudt.org/vocab/unit/{unit_code}";
+          rr:termType rr:IRI
+        ];
+      rr:predicate :unit
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:IRI;
+          rr:template "https://example.org/wind-v1/stream/{turbine_id}"
+        ];
+      rr:predicate :fromStream
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT source_file, row_number, turbine_id, observed_at, signal, unit_code, value, dataset_id FROM measurement_observations"
+    ] .
+
+<urn:r2rml:performance> a rr:TriplesMap;
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:class :PerformanceMetric;
+      rr:template "https://example.org/wind-v1/observation/{turbine_id}/{row_number}/{signal}";
+      rr:termType rr:IRI
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT turbine_id, row_number, signal FROM measurement_observations WHERE signal IN ('Power', 'EnergyExport')"
+    ] .
+
+<urn:r2rml:environment> a rr:TriplesMap;
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT turbine_id, row_number, signal FROM measurement_observations WHERE signal = 'WindSpeed'"
+    ];
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:template "https://example.org/wind-v1/observation/{turbine_id}/{row_number}/{signal}";
+      rr:termType rr:IRI;
+      rr:class :EnvironmentalCondition
+    ] .
+
+<urn:r2rml:events> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate :code;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "code";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :endedAt;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "ended_at";
+          rr:datatype xsd:dateTime;
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :startedAt;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "started_at";
+          rr:datatype xsd:dateTime;
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :message;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "message"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:template "https://example.org/wind-v1/turbine/{turbine_id}";
+          rr:termType rr:IRI
+        ];
+      rr:predicate sosa:hasFeatureOfInterest
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate prov:wasDerivedFrom;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:IRI;
+          rr:template "https://example.org/wind-v1/dataset/{dataset_id}"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :recordKind;
+      rr:object "observed_source"
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :sourceFile;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:column "source_file"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :sourceRow;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:datatype xsd:integer;
+          rr:column "row_number";
+          rr:termType rr:Literal
+        ]
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT source_file, row_number, turbine_id, started_at, ended_at, message, code, dataset_id FROM status_events"
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:class :OperationalEvent;
+      rr:template "https://example.org/wind-v1/event/{turbine_id}/{row_number}";
+      rr:termType rr:IRI
+    ] .
+
+<urn:r2rml:event_start_instants-68bba27d-ea0b-4ec2-9366-8f14de6aafb2> a rr:TriplesMap;
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:termType rr:IRI;
+      rr:template "https://example.org/wind-v1/event/{turbine_id}/{row_number}"
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT turbine_id, row_number, started_at FROM status_events"
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:template "https://example.org/wind-v1/instant/event/{turbine_id}/{row_number}/start";
+          rr:termType rr:IRI
+        ];
+      rr:predicate time:hasBeginning
+    ] .
+
+<urn:r2rml:event_start_instants-4d3e090d-3aed-4513-9c30-fe2588982309> a rr:TriplesMap;
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT turbine_id, row_number, started_at FROM status_events"
+    ];
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:template "https://example.org/wind-v1/instant/event/{turbine_id}/{row_number}/start";
+      rr:class time:Instant;
+      rr:termType rr:IRI
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "started_at";
+          rr:termType rr:Literal;
+          rr:datatype xsd:dateTimeStamp
+        ];
+      rr:predicate time:inXSDDateTimeStamp
+    ] .
+
+<urn:r2rml:synthetic_components-3c190eee-2428-465a-81e0-0f1a481f69fb> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate rdf:type;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:template "https://example.org/wind-v1/{proposed_component}";
+          rr:termType rr:IRI
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :recordKind;
+      rr:object "synthetic_demo"
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :name;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "proposed_component";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate prov:wasDerivedFrom;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:IRI;
+          rr:template "https://example.org/wind-v1/dataset/{dataset_id}"
+        ]
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT turbine_id, proposed_component, dataset_id FROM synthetic_maintenance"
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:template "https://example.org/wind-v1/component/{turbine_id}/{proposed_component}";
+      rr:termType rr:IRI
+    ] .
+
+<urn:r2rml:synthetic_components-f80b6d58-4280-436c-ba15-a01f62b15216> a rr:TriplesMap;
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT turbine_id, proposed_component, dataset_id FROM synthetic_maintenance"
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:termType rr:IRI;
+      rr:template "https://example.org/wind-v1/turbine/{turbine_id}"
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate :hasComponent;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:template "https://example.org/wind-v1/component/{turbine_id}/{proposed_component}";
+          rr:termType rr:IRI
+        ]
+    ] .
+
+<urn:r2rml:synthetic_faults-7c06d756-135a-4627-b327-f250f62d5de6> a rr:TriplesMap;
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:class :FaultCondition;
+      rr:template "https://example.org/wind-v1/fault/{case_id}";
+      rr:termType rr:IRI
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT case_id, turbine_id, source_status_row, proposed_fault, proposed_component, record_kind, relation_confidence, evidence_note, dataset_id FROM synthetic_maintenance"
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate :name;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "proposed_fault";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:column "record_kind"
+        ];
+      rr:predicate :recordKind
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :confidence;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:datatype xsd:decimal;
+          rr:termType rr:Literal;
+          rr:column "relation_confidence"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "evidence_note";
+          rr:termType rr:Literal
+        ];
+      rr:predicate :evidenceNote
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :affectsComponent;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:IRI;
+          rr:template "https://example.org/wind-v1/component/{turbine_id}/{proposed_component}"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate prov:wasDerivedFrom;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:template "https://example.org/wind-v1/dataset/{dataset_id}";
+          rr:termType rr:IRI
+        ]
+    ] .
+
+<urn:r2rml:synthetic_faults-ce2f247b-9aa7-46cc-906f-c0f612bd0d3e> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:IRI;
+          rr:template "https://example.org/wind-v1/fault/{case_id}"
+        ];
+      rr:predicate :indicatesFault
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:template "https://example.org/wind-v1/event/{turbine_id}/{source_status_row}";
+      rr:termType rr:IRI
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT case_id, turbine_id, source_status_row, proposed_fault, proposed_component, record_kind, relation_confidence, evidence_note, dataset_id FROM synthetic_maintenance"
+    ] .
+
+<urn:r2rml:synthetic_maintenance> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate :action;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "action"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :startedAt;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "maintenance_start";
+          rr:datatype xsd:dateTime;
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :endedAt;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "maintenance_end";
+          rr:datatype xsd:dateTime;
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :reportedBy;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:template "https://example.org/wind-v1/technician/{case_id}";
+          rr:termType rr:IRI
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :recordKind;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "record_kind";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:IRI;
+          rr:template "https://example.org/wind-v1/component/{turbine_id}/{proposed_component}"
+        ];
+      rr:predicate :performedOn
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :hasLog;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:template "https://example.org/wind-v1/log/{case_id}";
+          rr:termType rr:IRI
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate prov:wasDerivedFrom;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:IRI;
+          rr:template "https://example.org/wind-v1/dataset/{dataset_id}"
+        ]
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT case_id, turbine_id, proposed_component, maintenance_start, maintenance_end, action, record_kind, dataset_id FROM synthetic_maintenance"
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:template "https://example.org/wind-v1/maintenance/{case_id}";
+      rr:class :MaintenanceEvent;
+      rr:termType rr:IRI
+    ] .
+
+<urn:r2rml:synthetic_technicians> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "technician"
+        ];
+      rr:predicate :name
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :recordKind;
+      rr:object "synthetic_demo"
+    ];
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:template "https://example.org/wind-v1/technician/{case_id}";
+      rr:class :Technician;
+      rr:termType rr:IRI
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT case_id, technician FROM synthetic_maintenance"
+    ] .
+
+<urn:r2rml:synthetic_logs> a rr:TriplesMap;
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT case_id, maintenance_log FROM synthetic_maintenance"
+    ];
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:termType rr:IRI;
+      rr:class :MaintenanceLog;
+      rr:template "https://example.org/wind-v1/log/{case_id}"
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate :note;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "maintenance_log"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate :recordKind;
+      rr:object "synthetic_demo"
+    ] .
+
+<urn:r2rml:synthetic_parts-e0a9b0db-be17-4777-b9ce-657f97e04d9c> a rr:TriplesMap;
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT case_id, replacement_part FROM synthetic_maintenance WHERE replacement_part IS NOT NULL"
+    ];
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:termType rr:IRI;
+      rr:template "https://example.org/wind-v1/part/{case_id}";
+      rr:class :ReplacementPart
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:object "synthetic_demo";
+      rr:predicate :recordKind
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "replacement_part";
+          rr:termType rr:Literal
+        ];
+      rr:predicate :name
+    ] .
+
+<urn:r2rml:synthetic_parts-99067ac8-c9b2-4224-b04d-d1cb511a67d2> a rr:TriplesMap;
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:template "https://example.org/wind-v1/maintenance/{case_id}";
+      rr:termType rr:IRI
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:IRI;
+          rr:template "https://example.org/wind-v1/part/{case_id}"
+        ];
+      rr:predicate :usesPart
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT case_id, replacement_part FROM synthetic_maintenance WHERE replacement_part IS NOT NULL"
+    ] .

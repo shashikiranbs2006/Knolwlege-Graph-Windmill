@@ -1,0 +1,18 @@
+# Use case 2: "Both farms see gearbox faults. How did each farm fix them?"
+# Runs on the hub. Each farm is its own named graph (harvested from that farm's Ontop
+# endpoint and SHACL-validated); the registry in the default graph says which graph is
+# which farm. This is the team lead's query with two fixes: maintenance is linked to the
+# fault it addresses, and counts are DISTINCT. Use case 1 is the same pattern on one graph.
+PREFIX wind: <https://w3id.org/wind-core/ontology#>
+
+SELECT ?farm ?fault ?action (COUNT(DISTINCT ?m) AS ?times) (SAMPLE(?kind) AS ?recordKind) WHERE {
+  ?farmIri wind:farmId ?farm ; wind:graph ?g .
+  GRAPH ?g {
+    ?m a wind:MaintenanceEvent ; wind:addresses ?f ; wind:action ?action ; wind:recordKind ?kind ; wind:performedOn ?c .
+    ?c a wind:Gearbox .
+  }
+  ?f wind:name ?fault .   # fault names come from the shared catalogue in the default graph
+}
+GROUP BY ?farm ?fault ?action
+ORDER BY ?fault ?farm DESC(?times)
+LIMIT 50

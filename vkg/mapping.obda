@@ -1,0 +1,91 @@
+[PrefixDeclaration]
+wind:   https://w3id.org/wind-core/ontology#
+data:   https://w3id.org/wind-core/data/
+sosa:   http://www.w3.org/ns/sosa/
+prov:   http://www.w3.org/ns/prov#
+qudt:   http://qudt.org/schema/qudt/
+time:   http://www.w3.org/2006/time#
+skos:   http://www.w3.org/2004/02/skos/core#
+xsd:    http://www.w3.org/2001/XMLSchema#
+
+[MappingDeclaration] @collection [[
+mappingId     datasets
+target        data:dataset/{dataset_id} a wind:Dataset ; wind:recordKind {record_kind} ; wind:source {source} ; wind:sourceDate {source_date}^^xsd:date ; wind:ownedBy {owner} ; wind:license {license} ; wind:note {usage_note} .
+source        SELECT * FROM datasets
+
+mappingId     farms
+target        data:farm/{farm_id} a wind:WindFarm ; wind:farmId {farm_id} ; wind:name {name} ; wind:country {country} ; prov:wasDerivedFrom data:dataset/{dataset_id} .
+source        SELECT farm_id, name, country, dataset_id FROM farms
+
+mappingId     turbines
+target        data:farm/{farm_id}/turbine/{turbine_id} a wind:WindTurbine ; wind:name {title} ; wind:manufacturer {manufacturer} ; wind:model {model} ; wind:ratedPowerKW {rated_power_kw}^^xsd:decimal ; wind:locatedAt data:farm/{farm_id} ; prov:wasDerivedFrom data:dataset/{dataset_id} ; wind:recordKind "observed_source" .
+source        SELECT turbine_id, farm_id, title, manufacturer, model, rated_power_kw, dataset_id FROM turbines
+
+mappingId     components
+target        data:farm/{farm_id}/turbine/{turbine_id}/component/{component_type} a wind:{component_type} ; wind:name {component_type} ; wind:recordKind "derived_assumption" ; prov:wasDerivedFrom data:dataset/{dataset_id} . data:farm/{farm_id}/turbine/{turbine_id} wind:hasComponent data:farm/{farm_id}/turbine/{turbine_id}/component/{component_type} .
+source        SELECT c.turbine_id, t.farm_id, c.component_type, c.dataset_id FROM components c JOIN turbines t ON t.turbine_id = c.turbine_id
+
+mappingId     streams
+target        data:farm/{farm_id}/turbine/{turbine_id}/stream a wind:SCADADataStream ; wind:forTurbine data:farm/{farm_id}/turbine/{turbine_id} ; prov:wasDerivedFrom data:dataset/{dataset_id} .
+source        SELECT turbine_id, farm_id, dataset_id FROM turbines
+
+mappingId     sensors
+target        data:farm/{farm_id}/turbine/{turbine_id}/sensor/{signal} a wind:Sensor ; sosa:observes wind:{signal} .
+source        SELECT turbine_id, farm_id, signal FROM logical_sensors
+
+mappingId     observations
+target        data:farm/{farm_id}/turbine/{turbine_id}/observation/{row_number}/{signal} a sosa:Observation ; sosa:hasFeatureOfInterest data:farm/{farm_id}/turbine/{turbine_id} ; sosa:madeBySensor data:farm/{farm_id}/turbine/{turbine_id}/sensor/{signal} ; sosa:observedProperty wind:{signal} ; sosa:resultTime {observed_at}^^xsd:dateTime ; sosa:hasSimpleResult {value}^^xsd:double ; wind:unit <http://qudt.org/vocab/unit/{unit_code}> ; wind:fromStream data:farm/{farm_id}/turbine/{turbine_id}/stream ; wind:signal {signal} ; wind:sourceFile {source_file} ; wind:sourceRow {row_number}^^xsd:integer ; wind:recordKind "observed_source" ; prov:wasDerivedFrom data:dataset/{dataset_id} .
+source        SELECT source_file, row_number, turbine_id, farm_id, observed_at, signal, unit_code, value, dataset_id FROM measurement_observations
+
+mappingId     performance
+target        data:farm/{farm_id}/turbine/{turbine_id}/observation/{row_number}/{signal} a wind:PerformanceMetric .
+source        SELECT turbine_id, farm_id, row_number, signal FROM measurement_observations WHERE signal IN ('Power', 'EnergyExport')
+
+mappingId     environment
+target        data:farm/{farm_id}/turbine/{turbine_id}/observation/{row_number}/{signal} a wind:EnvironmentalCondition .
+source        SELECT turbine_id, farm_id, row_number, signal FROM measurement_observations WHERE signal = 'WindSpeed'
+
+mappingId     component_condition
+target        data:farm/{farm_id}/turbine/{turbine_id}/observation/{row_number}/{signal} a wind:ComponentCondition .
+source        SELECT turbine_id, farm_id, row_number, signal FROM measurement_observations WHERE signal = 'GearOilTemperature'
+
+mappingId     events
+target        data:farm/{farm_id}/turbine/{turbine_id}/event/{row_number} a wind:OperationalEvent ; wind:aboutTurbine data:farm/{farm_id}/turbine/{turbine_id} ; sosa:hasFeatureOfInterest data:farm/{farm_id}/turbine/{turbine_id} ; wind:startedAt {started_at}^^xsd:dateTime ; wind:message {message} ; wind:code {code} ; wind:status {status} ; wind:sourceFile {source_file} ; wind:sourceRow {row_number}^^xsd:integer ; wind:recordKind "observed_source" ; prov:wasDerivedFrom data:dataset/{dataset_id} .
+source        SELECT e.source_file, e.row_number, e.turbine_id, t.farm_id, e.started_at, e.message, e.code, e.status, e.dataset_id FROM status_events e JOIN turbines t ON t.turbine_id = e.turbine_id
+
+mappingId     event_ends
+target        data:farm/{farm_id}/turbine/{turbine_id}/event/{row_number} wind:endedAt {ended_at}^^xsd:dateTime .
+source        SELECT e.row_number, e.turbine_id, t.farm_id, e.ended_at FROM status_events e JOIN turbines t ON t.turbine_id = e.turbine_id WHERE e.ended_at IS NOT NULL
+
+mappingId     event_start_instants
+target        data:farm/{farm_id}/turbine/{turbine_id}/event/{row_number} time:hasBeginning data:farm/{farm_id}/turbine/{turbine_id}/event/{row_number}/start . data:farm/{farm_id}/turbine/{turbine_id}/event/{row_number}/start a time:Instant ; time:inXSDDateTimeStamp {started_at}^^xsd:dateTimeStamp .
+source        SELECT e.turbine_id, t.farm_id, e.row_number, e.started_at FROM status_events e JOIN turbines t ON t.turbine_id = e.turbine_id
+
+mappingId     fault_conditions
+target        data:fault/{fault_code} a wind:FaultCondition ; skos:prefLabel {label} ; wind:name {label} ; skos:definition {description} ; wind:typicalComponent wind:{component_type} ; wind:recordKind "curated_demo" ; prov:wasDerivedFrom data:dataset/{dataset_id} .
+source        SELECT fault_code, label, description, component_type, dataset_id FROM fault_conditions
+
+mappingId     diagnoses
+target        data:farm/{farm_id}/diagnosis/{turbine_id}/{row_number}/{rule_id} a wind:Diagnosis ; wind:diagnosedEvent data:farm/{farm_id}/turbine/{turbine_id}/event/{row_number} ; wind:diagnosedFault data:fault/{fault_code} ; wind:confidence {confidence}^^xsd:decimal ; wind:rule {rule_id} ; wind:evidenceNote {rationale} ; wind:recordKind "curated_demo" ; prov:wasDerivedFrom data:dataset/{dataset_id} . data:farm/{farm_id}/turbine/{turbine_id}/event/{row_number} wind:indicatesFault data:fault/{fault_code} .
+source        SELECT turbine_id, farm_id, row_number, rule_id, fault_code, confidence, rationale, dataset_id FROM diagnoses
+
+mappingId     fault_affects_component
+target        data:fault/{fault_code} wind:affectsComponent data:farm/{farm_id}/turbine/{turbine_id}/component/{component_type} .
+source        SELECT DISTINCT d.fault_code, d.farm_id, d.turbine_id, f.component_type FROM diagnoses d JOIN fault_conditions f ON f.fault_code = d.fault_code
+
+mappingId     synthetic_maintenance
+target        data:farm/{farm_id}/maintenance/{case_id} a wind:MaintenanceEvent ; wind:startedAt {maintenance_start}^^xsd:dateTime ; wind:endedAt {maintenance_end}^^xsd:dateTime ; wind:action {action} ; wind:recordKind {record_kind} ; wind:confidence {relation_confidence}^^xsd:decimal ; wind:evidenceNote {evidence_note} ; wind:addresses data:fault/{fault_code} ; wind:triggeredBy data:farm/{farm_id}/turbine/{turbine_id}/event/{source_status_row} ; wind:performedOn data:farm/{farm_id}/turbine/{turbine_id}/component/{proposed_component} ; wind:reportedBy data:farm/{farm_id}/technician/{case_id} ; wind:hasLog data:farm/{farm_id}/log/{case_id} ; prov:wasDerivedFrom data:dataset/{dataset_id} .
+source        SELECT m.case_id, t.farm_id, m.turbine_id, m.source_status_row, m.fault_code, m.proposed_component, m.maintenance_start, m.maintenance_end, m.action, m.record_kind, m.relation_confidence, m.evidence_note, m.dataset_id FROM synthetic_maintenance m JOIN turbines t ON t.turbine_id = m.turbine_id
+
+mappingId     synthetic_technicians
+target        data:farm/{farm_id}/technician/{case_id} a wind:Technician ; wind:name {technician} ; wind:recordKind "synthetic_demo" .
+source        SELECT m.case_id, t.farm_id, m.technician FROM synthetic_maintenance m JOIN turbines t ON t.turbine_id = m.turbine_id
+
+mappingId     synthetic_logs
+target        data:farm/{farm_id}/log/{case_id} a wind:MaintenanceLog ; wind:note {maintenance_log} ; wind:recordKind "synthetic_demo" .
+source        SELECT m.case_id, t.farm_id, m.maintenance_log FROM synthetic_maintenance m JOIN turbines t ON t.turbine_id = m.turbine_id
+
+mappingId     synthetic_parts
+target        data:farm/{farm_id}/part/{case_id} a wind:ReplacementPart ; wind:name {replacement_part} ; wind:recordKind "synthetic_demo" . data:farm/{farm_id}/maintenance/{case_id} wind:usesPart data:farm/{farm_id}/part/{case_id} .
+source        SELECT m.case_id, t.farm_id, m.replacement_part FROM synthetic_maintenance m JOIN turbines t ON t.turbine_id = m.turbine_id WHERE m.replacement_part IS NOT NULL
+]]

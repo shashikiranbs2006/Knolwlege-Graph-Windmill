@@ -1,0 +1,23 @@
+PREFIX : <https://example.org/wind-v1/>
+PREFIX sosa: <http://www.w3.org/ns/sosa/>
+PREFIX prov: <http://www.w3.org/ns/prov#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?turbineName ?observedAt ?power ?sourceFile ?sourceRow ?eventMessage ?eventFile ?eventRow ?faultName ?action ?recordKind ?confidence ?evidenceNote ?realSource ?demoSource WHERE {
+  ?observation sosa:hasFeatureOfInterest <https://example.org/wind-v1/turbine/KWF2> ;
+    sosa:observedProperty :Power ; sosa:resultTime ?observedAt ;
+    sosa:hasSimpleResult ?power ; :sourceFile ?sourceFile ; :sourceRow ?sourceRow ;
+    prov:wasDerivedFrom ?realDataset .
+  ?realDataset :source ?realSource .
+  <https://example.org/wind-v1/turbine/KWF2> :name ?turbineName .
+  <https://example.org/wind-v1/event/KWF2/72> :message ?eventMessage ; :sourceFile ?eventFile ; :sourceRow ?eventRow ;
+    :startedAt ?eventStart ; :endedAt ?eventEnd ; :indicatesFault ?fault .
+  ?fault :name ?faultName ; :recordKind ?recordKind ; :confidence ?confidence ;
+    :evidenceNote ?evidenceNote ; :affectsComponent ?component .
+  ?maintenance :performedOn ?component ; :action ?action ;
+    prov:wasDerivedFrom ?demoDataset .
+  ?demoDataset :source ?demoSource .
+  FILTER (?observedAt >= "2016-01-29T12:00:00Z"^^xsd:dateTime && ?observedAt < "2016-01-29T13:00:00Z"^^xsd:dateTime && ?observedAt >= ?eventStart && ?observedAt < ?eventEnd)
+}
+ORDER BY ?observedAt
+LIMIT 5

@@ -1,0 +1,4 @@
+build/
+*.log
+data/kelmarsh/*.zip
+cli/jdbc/*.jar

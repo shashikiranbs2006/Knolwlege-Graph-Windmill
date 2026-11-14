@@ -1,0 +1,20 @@
+PREFIX : <https://example.org/wind-v1/>
+PREFIX sosa: <http://www.w3.org/ns/sosa/>
+PREFIX prov: <http://www.w3.org/ns/prov#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?turbineName ?observedAt ?power ?unit ?sourceFile ?sourceRow ?datasetSource WHERE {
+  ?observation a sosa:Observation ;
+    sosa:hasFeatureOfInterest <https://example.org/wind-v1/turbine/KWF2> ;
+    sosa:observedProperty :Power ;
+    sosa:resultTime ?observedAt ;
+    sosa:hasSimpleResult ?power ;
+    :unit ?unit ;
+    :sourceFile ?sourceFile ; :sourceRow ?sourceRow ;
+    prov:wasDerivedFrom ?dataset .
+  <https://example.org/wind-v1/turbine/KWF2> :name ?turbineName .
+  ?dataset :source ?datasetSource .
+  FILTER (?observedAt >= "2016-01-29T12:00:00Z"^^xsd:dateTime && ?observedAt < "2016-01-29T13:00:00Z"^^xsd:dateTime)
+}
+ORDER BY ?observedAt
+LIMIT 5

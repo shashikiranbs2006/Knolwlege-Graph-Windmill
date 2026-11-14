@@ -1,0 +1,3 @@
+dataset_id,record_kind,source,source_date,owner,license,usage_note
+kelmarsh-2016,observed_source,https://doi.org/10.5281/zenodo.16807551,2025-08-12,Cubico Sustainable Investments Ltd,CC BY 4.0,Attribute Cubico and cite the Zenodo record
+v1-synthetic-maintenance,synthetic_demo,Created for this V1 project on user request,2026-11-13,V1 project team,Not specified,Demo only; do not publish or analyze as observed maintenance or confirmed faults

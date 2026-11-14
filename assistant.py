@@ -1,0 +1,267 @@
+"""One assistant for both use cases: plain-English question -> SPARQL on the hub -> grounded reply.
+
+Every question goes to the hub (Apache Jena Fuseki), which holds one named graph per farm plus
+the shared curated knowledge. The tab decides the scope:
+
+    scope "farm"   use case 1: only farm A's named graph (plus the shared curated knowledge)
+    scope "cross"  use case 2: every farm graph, joined through the hub's farm registry
+
+If the hub cannot be reached, the farm-A tab falls back to farm A's own Ontop endpoint
+("answered at the farm"), so each tab fails on its own.
+
+Works with any OpenAI-compatible chat API (Gemini by default; Groq: LLM_BASE_URL=https://api.groq.com/openai/v1).
+Environment:
+    LLM_API_KEY         required (keep it in .env, never in code)
+    LLM_BASE_URL        default https://generativelanguage.googleapis.com/v1beta/openai/
+    LLM_MODEL           default gemini-flash-latest
+    HUB_ENDPOINT        hub SPARQL endpoint (default http://127.0.0.1:3030/hub/sparql)
+    FARM_A_ENDPOINT     farm A's Ontop endpoint, used only as the at-the-farm fallback
+                        (default http://127.0.0.1:8080/sparql; empty disables the fallback)
+    FARM_A_GRAPH        farm A's named graph in the hub
+
+The model only ever writes read-only SELECT queries; the graph supplies every fact in the
+answer, and the reply is written from the returned rows only.
+"""
+
+import json
+import os
+import re
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+BASE_URL = os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+MODEL = os.getenv("LLM_MODEL", "gemini-flash-latest")
+HUB = os.getenv("HUB_ENDPOINT", "http://127.0.0.1:3030/hub/sparql")
+FARM_A = os.getenv("FARM_A_ENDPOINT", "http://127.0.0.1:8080/sparql")
+FARM_A_GRAPH = os.getenv("FARM_A_GRAPH", "https://w3id.org/wind-core/data/graph/kelmarsh")
+ONTOLOGY = Path(os.getenv("VKG_ONTOLOGY_FILE", "vkg/ontology.ttl"))
+EXAMPLES = Path(os.getenv("ASSISTANT_EXAMPLES", "queries"))
+MAX_ROWS = 50
+FORBIDDEN = re.compile(r"\b(INSERT|DELETE|LOAD|CLEAR|DROP|CREATE|COPY|MOVE|ADD|SERVICE|FROM)\b", re.I)
+SCOPES = {
+    "farm": {"endpoint": lambda: HUB, "examples": "farm_a_*.rq", "where": "the hub, farm A's graph"},
+    "cross": {"endpoint": lambda: HUB, "examples": "hub_0[123]_*.rq", "where": "the hub, all farm graphs"},
+    "farm-direct": {"endpoint": lambda: FARM_A, "examples": "0[1235]_*.rq", "where": "farm A's own Ontop endpoint"},
+}
+
+
+class Unavailable(Exception):
+    """The SPARQL endpoint could not be reached (as opposed to rejecting the query)."""
+
+
+def vocabulary():
+    """A compact, model-readable summary of wind-core built from ontology.ttl."""
+    lines = []
+    for match in re.finditer(r"(?ms)^(wind:\w+) a ([\w:]+)(.*?)\s\.$", ONTOLOGY.read_text(encoding="utf-8")):
+        term, kind, rest = match.groups()
+        details = []
+        for key in ("rdfs:subClassOf", "rdfs:domain", "rdfs:range"):
+            found = re.search(key + r" ([\w:]+)", rest)
+            if found:
+                details.append(f"{key.split(':')[1]} {found.group(1)}")
+        comment = re.search(r'rdfs:comment "([^"]*)"', rest)
+        kind = {"owl:Class": "class", "owl:ObjectProperty": "object property", "owl:DatatypeProperty": "datatype property",
+                "sosa:ObservableProperty": "observable property (use with sosa:observedProperty)"}.get(kind, kind)
+        lines.append(f"- {term} ({kind}{'; ' + ', '.join(details) if details else ''}): {comment.group(1) if comment else ''}")
+    return "\n".join(lines)
+
+
+def examples(scope):
+    return "\n\n".join(path.read_text(encoding="utf-8").strip() for path in sorted(EXAMPLES.glob(SCOPES[scope]["examples"])))
+
+
+def system_prompt(scope):
+    rules = [
+        "You translate wind-farm engineering questions into ONE SPARQL 1.1 SELECT query over the wind-core knowledge graph.",
+        "Use only the vocabulary below plus sosa:, prov:, skos:, xsd:. Declare every prefix you use.",
+        "PREFIX wind: <https://w3id.org/wind-core/ontology#> ; PREFIX sosa: <http://www.w3.org/ns/sosa/> ; PREFIX prov: <http://www.w3.org/ns/prov#> ; PREFIX skos: <http://www.w3.org/2004/02/skos/core#> ; PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+        "Instance IRIs follow https://w3id.org/wind-core/data/farm/{farm_id}/turbine/{turbine_id}; faults are https://w3id.org/wind-core/data/fault/{FaultCode}. Prefer matching names with wind:name instead of guessing IRIs.",
+        "Match alarm or fault text with FILTER(CONTAINS(LCASE(?text), \"lower-case words\")); alarm messages look like 'High temp. gear bearing 2', 'Low gearbox oil pressure', 'Overload generator fan 1'.",
+        "Confidence of an event->fault link is on the wind:Diagnosis node (wind:diagnosedEvent, wind:diagnosedFault, wind:confidence).",
+        "Whenever maintenance, faults or diagnoses are returned, also return their wind:recordKind as ?recordKind.",
+        f"Never return more than {MAX_ROWS} rows: always end with LIMIT {MAX_ROWS} or less. Use aggregates for counts.",
+        "Never use SERVICE, FROM or FROM NAMED.",
+        "Reply with the query only, inside a ```sparql code block.",
+    ]
+    if scope == "farm":
+        rules.append(f"The hub keeps each farm in its own named graph. This question is about farm A (Kelmarsh) ONLY: put every farm data pattern inside GRAPH <{FARM_A_GRAPH}> {{ ... }} and never use any other GRAPH. "
+                     "Curated cross-farm knowledge (alarm types, wind:suggestsFault with RDF 1.2 annotations) is in the default graph, outside GRAPH.")
+    elif scope == "cross":
+        rules.append("The hub keeps each farm in its own named graph. Compare farms by binding the graph from the registry in the default graph: "
+                     "?farmIri wind:farmId ?farm ; wind:graph ?g . GRAPH ?g { ...farm patterns... }. Always return ?farm. "
+                     "Curated cross-farm knowledge is in the default graph, outside GRAPH: the shared fault catalogue (read fault names there: ?f wind:name ?fault, outside GRAPH, because not every farm graph carries them) and alarm types with wind:suggestsFault and RDF 1.2 annotations {| wind:confidence ?c |}.")
+    else:
+        rules.append("You query farm A's own Ontop endpoint directly. Do not use GRAPH.")
+    return "\n".join(rules) + "\n\nVocabulary:\n" + vocabulary() + "\n\nWorking example queries:\n" + examples(scope)
+
+
+def chat(messages):
+    key = os.getenv("LLM_API_KEY", "")
+    if not key:
+        raise RuntimeError("No LLM_API_KEY is set. Add LLM_API_KEY=... to the .env file and restart the site.")
+    request = urllib.request.Request(
+        BASE_URL.rstrip("/") + "/chat/completions",
+        data=json.dumps({"model": MODEL, "messages": messages, "temperature": 0}).encode(),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}",
+                 "User-Agent": "vkg-windmill-assistant/1.0"},  # Cloudflare-fronted APIs (Groq) block Python-urllib's default UA (error 1010)
+    )
+    for attempt in range(5):
+        try:
+            with urllib.request.urlopen(request, timeout=90) as response:
+                body = json.load(response)
+            break
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode(errors="replace")[:400]
+            if error.code == 429 and attempt < 4:  # free-tier tokens-per-minute limit: wait and retry
+                try:
+                    wait = float(error.headers.get("retry-after", "10"))
+                except ValueError:
+                    wait = 10.0
+                time.sleep(min(max(wait, 1.0), 30.0) + 1)
+                continue
+            raise RuntimeError(f"LLM API error {error.code}: {detail}") from error
+    return body["choices"][0]["message"]["content"] or ""
+
+
+def extract(text):
+    block = re.search(r"```(?:sparql)?\s*(.*?)```", text, re.S | re.I)
+    return (block.group(1) if block else text).strip()
+
+
+def code_only(sparql):
+    """The query without string literals, IRIs and comments, for keyword checks."""
+    text = re.sub(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|#[^\n]*', '""', re.sub(r"<[^<>\s]*>", "<>", sparql))
+    return re.sub(r"[?$]\w+|\b\w*:\w+", "_", text)  # variables and prefixed names are not keywords
+
+
+def check(sparql, scope="farm"):
+    if not re.search(r"\bSELECT\b", sparql, re.I) or FORBIDDEN.search(code_only(sparql)):
+        raise ValueError("The generated query is not a read-only SELECT query on one endpoint (no updates, SERVICE, FROM or FROM NAMED).")
+    graphs = re.findall(r"\bGRAPH\s+(<[^>]*>|\?\w+|\$\w+|\w*:\w*)", re.sub(r'"(?:[^"\\]|\\.)*"', '""', sparql), re.I)
+    if scope == "farm":
+        if not graphs or any(graph != f"<{FARM_A_GRAPH}>" for graph in graphs):
+            raise ValueError(f"On the farm A tab, every farm pattern must be inside GRAPH <{FARM_A_GRAPH}> and no other graph may be used.")
+    elif scope == "cross":
+        if not graphs:
+            raise ValueError("Cross-farm questions must read the farm graphs with GRAPH ?g (bound from ?farmIri wind:graph ?g).")
+    elif graphs:
+        raise ValueError("GRAPH is not used at the farm endpoint.")
+    limits = [int(value) for value in re.findall(r"\bLIMIT\s+(\d+)", sparql, re.I)]
+    if not limits:
+        sparql += f"\nLIMIT {MAX_ROWS}"
+    elif max(limits) > MAX_ROWS:
+        raise ValueError(f"Use LIMIT {MAX_ROWS} or less.")
+    return sparql
+
+
+def run_sparql(sparql, endpoint, timeout=120):
+    request = urllib.request.Request(
+        endpoint, data=urllib.parse.urlencode({"query": sparql}).encode(),
+        headers={"Accept": "application/sparql-results+json"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            result = json.load(response)
+    except urllib.error.HTTPError as error:
+        if error.code in (502, 503, 504):
+            raise Unavailable(f"{endpoint} answered HTTP {error.code}") from error
+        raise ValueError(error.read().decode("utf-8", errors="replace").strip()[:1500] or f"HTTP {error.code}") from error
+    except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as error:
+        raise Unavailable(f"{endpoint} is not reachable ({getattr(error, 'reason', error)})") from error
+    columns = result["head"]["vars"]
+    rows = [{column: binding.get(column, {}).get("value", "") for column in columns} for binding in result["results"]["bindings"]]
+    return columns, rows
+
+
+def at_the_farm(sparql):
+    """Turn a farm-A hub query into the equivalent query for farm A's Ontop endpoint by
+    unwrapping GRAPH <farm A> { ... } into a plain group. Returns None if that is not possible."""
+    opener = re.compile(r"\bGRAPH\s+<" + re.escape(FARM_A_GRAPH) + r">\s*\{", re.I)
+    out, position = [], 0
+    for match in opener.finditer(sparql):
+        if match.start() < position:
+            return None
+        out.append(sparql[position:match.start()] + "{")
+        position = match.end()
+    if not out:
+        return None
+    result = "".join(out) + sparql[position:]
+    return None if re.search(r"\bGRAPH\b", code_only(result), re.I) else result
+
+
+def answer_text(question, sparql, columns, rows, scope):
+    if not rows:
+        return "The knowledge graph returned no rows for this question, so I can't answer it from the data."
+    focus = ("Each row is one farm; compare farms only using these rows. " if scope == "cross" else "")
+    prompt = (
+        "Answer the engineer's question in 2-4 plain sentences using ONLY the result rows below. " + focus +
+        "Quote numbers, dates, fault names and actions exactly as given. If any row has recordKind synthetic_demo, say clearly that those maintenance/repair records are synthetic demo data, not real repairs; "
+        "if curated_demo, say the fault link or confidence comes from an illustrative demo rule. Do not add causes, fixes or numbers that are not in the rows.\n\n"
+        f"Question: {question}\nSPARQL used:\n{sparql}\nColumns: {columns}\nRows (JSON): {json.dumps(rows[:30])}"
+    )
+    text = chat([{"role": "user", "content": prompt}]).strip()
+    kinds = {row.get("recordKind") for row in rows}
+    if "synthetic_demo" in kinds and "synthetic" not in text.lower():  # the demo must always say so
+        text += " Note: the maintenance and repair records in this answer are synthetic demo data, not real repairs."
+    return text
+
+
+def generate(question, scope, attempts):
+    """LLM loop: write a query for the scope, run it, feed errors back. Raises Unavailable if the endpoint is down."""
+    endpoint = SCOPES[scope]["endpoint"]()
+    messages = [{"role": "system", "content": system_prompt(scope)}, {"role": "user", "content": question}]
+    trail = []
+    for _ in range(attempts):
+        reply = chat(messages)
+        sparql = extract(reply)
+        try:
+            sparql = check(sparql, scope)
+            columns, rows = run_sparql(sparql, endpoint)
+        except ValueError as error:
+            trail.append({"sparql": sparql, "error": str(error)})
+            messages += [{"role": "assistant", "content": reply},
+                         {"role": "user", "content": f"That query failed: {str(error)[:800]}\nReturn a corrected query."}]
+            continue
+        if not rows and len(trail) < attempts - 1:
+            trail.append({"sparql": sparql, "error": "0 rows"})
+            messages += [{"role": "assistant", "content": reply},
+                         {"role": "user", "content": "That query returned 0 rows. If the question can be answered, relax overly specific filters or IRIs and try once more."}]
+            continue
+        return sparql, columns, rows, trail, endpoint
+    raise ValueError("I could not produce a working query: " + (trail[-1]["error"] if trail else "no reply"))
+
+
+def ask(question, scope="farm", attempts=3):
+    question = question.strip()
+    if scope not in ("farm", "cross"):
+        raise ValueError("Unknown tab.")
+    if not question or len(question) > 1000:
+        raise ValueError("Ask a question of up to 1,000 characters.")
+    via, notice = scope, ""
+    try:
+        sparql, columns, rows, trail, endpoint = generate(question, scope, attempts)
+    except Unavailable as error:
+        if scope != "farm" or not FARM_A:
+            raise RuntimeError(f"The hub is unavailable, so cross-farm questions cannot be answered right now: {error}") from error
+        notice = f"The hub is unavailable ({error}), so this was answered at the farm, on farm A's own Ontop endpoint."
+        via = "farm-direct"
+        try:
+            sparql, columns, rows, trail, endpoint = generate(question, via, attempts)
+        except Unavailable as farm_error:
+            raise RuntimeError(f"Neither the hub nor farm A's own endpoint is reachable: {farm_error}") from farm_error
+    return {"question": question, "scope": scope, "via": via, "where": SCOPES[via]["where"], "notice": notice,
+            "sparql": sparql, "farm_sparql": sparql if via == "farm-direct" else (at_the_farm(sparql) if scope == "farm" else None),
+            "columns": columns, "rows": rows, "answer": answer_text(question, sparql, columns, rows, scope),
+            "attempts": trail, "model": MODEL, "endpoint": endpoint}
+
+
+if __name__ == "__main__":
+    import sys
+    args = sys.argv[1:]
+    tab = "cross" if args[:1] == ["--cross"] else "farm"
+    args = args[1:] if args[:1] == ["--cross"] else args
+    default = {"farm": "What usually causes high gear bearing temperature on a gearbox, and what fixed it last time?",
+               "cross": "For gearbox faults, how did each farm fix them and how often?"}[tab]
+    print(json.dumps(ask(" ".join(args) or default, tab), indent=2))

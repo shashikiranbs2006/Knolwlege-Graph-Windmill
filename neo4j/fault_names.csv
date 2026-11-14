@@ -1,0 +1,3 @@
+neo4j_fault_name,fault_code
+Bearing wear,GearboxBearingWear
+Lubrication failure,GearboxLubricationFault

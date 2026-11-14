@@ -1,0 +1,111 @@
+@prefix wind: <https://w3id.org/wind-core/ontology#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix sosa: <http://www.w3.org/ns/sosa/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# wind-core: the shared minimal vocabulary from Kwakye & Barber (2026), section 4.2, plus
+# the few extra terms this demo needs. Every farm node maps its own data to these terms.
+# Only OWL 2 QL axioms are used (subclass, domain, range), because that is what Ontop applies.
+# The namespace is a placeholder until it is registered at w3id.org.
+<https://w3id.org/wind-core/ontology> a owl:Ontology ;
+  owl:versionInfo "1.1" ;
+  rdfs:label "wind-core" ;
+  rdfs:comment "Shared minimal wind-energy vocabulary. External terms (SOSA, PROV-O, OWL-Time, QUDT, SKOS) are reused without importing their full ontologies." .
+
+# ---------- Asset layer ----------
+wind:WindFarm a owl:Class ; rdfs:label "Wind farm" ; rdfs:comment "A site containing wind turbines." .
+wind:WindTurbine a owl:Class ; rdfs:label "Wind turbine" ; rdfs:comment "A turbine identified by the operator's static table." .
+wind:Component a owl:Class ; rdfs:label "Component" ; rdfs:comment "A physical part of a wind turbine." .
+wind:RotorBlade a owl:Class ; rdfs:subClassOf wind:Component ; rdfs:label "Rotor blade" ; rdfs:comment "A rotor blade; no individual blade records are available yet." .
+wind:Gearbox a owl:Class ; rdfs:subClassOf wind:Component ; rdfs:label "Gearbox" ; rdfs:comment "A gearbox; one per turbine, assumed from the turbine model." .
+wind:Generator a owl:Class ; rdfs:subClassOf wind:Component ; rdfs:label "Generator" ; rdfs:comment "A generator; one per turbine, assumed from the turbine model." .
+wind:Sensor a owl:Class ; rdfs:subClassOf sosa:Sensor ; rdfs:label "Sensor" ; rdfs:comment "A logical SCADA signal channel, not a verified physical sensor asset." .
+
+# ---------- Operational layer ----------
+wind:SCADADataStream a owl:Class ; rdfs:label "SCADA data stream" ; rdfs:comment "The time-series stream for one turbine." .
+wind:OperationalEvent a owl:Class ; rdfs:label "Operational event" ; rdfs:comment "A status or alarm event reported by the operator's SCADA archive." .
+wind:EnvironmentalCondition a owl:Class ; rdfs:subClassOf sosa:Observation ; rdfs:label "Environmental condition" ; rdfs:comment "An environmental observation, such as wind speed." .
+wind:PerformanceMetric a owl:Class ; rdfs:subClassOf sosa:Observation ; rdfs:label "Performance metric" ; rdfs:comment "A performance observation, such as power or interval energy." .
+wind:ComponentCondition a owl:Class ; rdfs:subClassOf sosa:Observation ; rdfs:label "Component condition" ; rdfs:comment "A condition-monitoring observation of a component, such as gear oil temperature." .
+
+# ---------- Maintenance layer ----------
+wind:FaultCondition a owl:Class ; rdfs:subClassOf skos:Concept ; rdfs:label "Fault condition" ;
+  rdfs:comment "A kind of fault from the shared fault catalogue (e.g. gearbox bearing wear). The same IRI is used on every farm so faults can be compared." .
+wind:Diagnosis a owl:Class ; rdfs:label "Diagnosis" ;
+  rdfs:comment "One link from an operational event to a fault condition, with its confidence and the rule that produced it. This node carries the 'edge properties' of indicatesFault." .
+wind:MaintenanceEvent a owl:Class ; rdfs:label "Maintenance event" ; rdfs:comment "A maintenance or repair activity. Demo individuals are synthetic." .
+wind:ReplacementPart a owl:Class ; rdfs:label "Replacement part" ; rdfs:comment "A part fitted during maintenance. Demo individuals are synthetic." .
+wind:Technician a owl:Class ; rdfs:label "Technician" ; rdfs:comment "A person who performs maintenance. Demo individuals are synthetic." .
+wind:MaintenanceLog a owl:Class ; rdfs:label "Maintenance log" ; rdfs:comment "A work-log entry. Demo individuals are synthetic." .
+
+wind:AlarmType a owl:Class ; rdfs:label "Alarm type" ; rdfs:comment "A kind of SCADA alarm, recognised by its message text, shared across farms in the hub." .
+
+# ---------- Governance ----------
+wind:Dataset a owl:Class ; rdfs:subClassOf prov:Entity ; rdfs:label "Dataset" ; rdfs:comment "A source, curated or synthetic data collection with ownership and usage metadata." .
+
+# ---------- Core relations (paper section 4.2) ----------
+wind:locatedAt a owl:ObjectProperty ; rdfs:domain wind:WindTurbine ; rdfs:range wind:WindFarm ; rdfs:comment "Links a turbine to its wind farm." .
+wind:hasComponent a owl:ObjectProperty ; rdfs:domain wind:WindTurbine ; rdfs:range wind:Component ; rdfs:comment "Links a turbine to one of its components." .
+wind:indicatesFault a owl:ObjectProperty ; rdfs:domain wind:OperationalEvent ; rdfs:range wind:FaultCondition ; rdfs:comment "An event is evidence for a fault condition. Its confidence and source are on the matching wind:Diagnosis (and as RDF 1.2 annotations in the hub)." .
+wind:affectsComponent a owl:ObjectProperty ; rdfs:domain wind:FaultCondition ; rdfs:range wind:Component ; rdfs:comment "A fault condition was diagnosed on this component." .
+wind:performedOn a owl:ObjectProperty ; rdfs:domain wind:MaintenanceEvent ; rdfs:range wind:Component ; rdfs:comment "Links maintenance to the component it was done on." .
+
+# ---------- Further relations ----------
+wind:addresses a owl:ObjectProperty ; rdfs:domain wind:MaintenanceEvent ; rdfs:range wind:FaultCondition ; rdfs:comment "The fault condition a maintenance activity was meant to fix." .
+wind:triggeredBy a owl:ObjectProperty ; rdfs:domain wind:MaintenanceEvent ; rdfs:range wind:OperationalEvent ; rdfs:comment "The alarm event that led to the maintenance." .
+wind:diagnosedEvent a owl:ObjectProperty ; rdfs:domain wind:Diagnosis ; rdfs:range wind:OperationalEvent ; rdfs:comment "The event a diagnosis is about." .
+wind:diagnosedFault a owl:ObjectProperty ; rdfs:domain wind:Diagnosis ; rdfs:range wind:FaultCondition ; rdfs:comment "The fault condition a diagnosis proposes." .
+wind:aboutTurbine a owl:ObjectProperty ; rdfs:domain wind:OperationalEvent ; rdfs:range wind:WindTurbine ; rdfs:comment "The turbine that reported an event." .
+wind:typicalComponent a owl:ObjectProperty ; rdfs:domain wind:FaultCondition ; rdfs:comment "The component class a fault condition usually affects (a class IRI, e.g. wind:Gearbox)." .
+wind:suggestsFault a owl:ObjectProperty ; rdfs:domain wind:AlarmType ; rdfs:range wind:FaultCondition ; rdfs:comment "Curated hub knowledge: this alarm type points to this fault condition. Each statement carries RDF 1.2 annotations (wind:confidence, wind:rule, prov:wasDerivedFrom)." .
+wind:reportedBy a owl:ObjectProperty ; rdfs:domain wind:MaintenanceEvent ; rdfs:range wind:Technician ; rdfs:comment "Links maintenance to its technician." .
+wind:hasLog a owl:ObjectProperty ; rdfs:domain wind:MaintenanceEvent ; rdfs:range wind:MaintenanceLog ; rdfs:comment "Links maintenance to its log entry." .
+wind:usesPart a owl:ObjectProperty ; rdfs:domain wind:MaintenanceEvent ; rdfs:range wind:ReplacementPart ; rdfs:comment "Links maintenance to a replacement part." .
+wind:fromStream a owl:ObjectProperty ; rdfs:range wind:SCADADataStream ; rdfs:comment "Links an observation to a turbine stream." .
+wind:forTurbine a owl:ObjectProperty ; rdfs:domain wind:SCADADataStream ; rdfs:range wind:WindTurbine ; rdfs:comment "Links a turbine stream to its turbine." .
+wind:unit a owl:ObjectProperty ; rdfs:comment "Links a numeric observation to a QUDT unit IRI." .
+wind:sparqlEndpoint a owl:ObjectProperty ; rdfs:domain wind:WindFarm ; rdfs:comment "The SPARQL endpoint of the farm node that serves this farm's data." .
+wind:graph a owl:ObjectProperty ; rdfs:domain wind:WindFarm ; rdfs:comment "Hub registry: the named graph in the hub that holds this farm's validated, harvested records." .
+wind:validatedBy a owl:ObjectProperty ; rdfs:domain wind:WindFarm ; rdfs:comment "Hub registry: the SHACL shapes the farm's graph passed before it was loaded into the hub." .
+
+# ---------- Attributes ----------
+wind:name a owl:DatatypeProperty ; rdfs:comment "Display name." .
+wind:farmId a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:comment "Short farm identifier used in IRIs." .
+wind:country a owl:DatatypeProperty ; rdfs:comment "Country of a wind farm." .
+wind:model a owl:DatatypeProperty ; rdfs:comment "Turbine model name." .
+wind:manufacturer a owl:DatatypeProperty ; rdfs:comment "Turbine manufacturer." .
+wind:ratedPowerKW a owl:DatatypeProperty ; rdfs:range xsd:decimal ; rdfs:comment "Rated power in kW." .
+wind:recordKind a owl:DatatypeProperty ; rdfs:comment "observed_source, curated_demo, derived_assumption or synthetic_demo; must be shown with mixed results." .
+wind:sourceFile a owl:DatatypeProperty ; rdfs:comment "Filename within the source archive." .
+wind:sourceRow a owl:DatatypeProperty ; rdfs:range xsd:integer ; rdfs:comment "One-based data row within a source CSV file." .
+wind:signal a owl:DatatypeProperty ; rdfs:comment "SCADA signal name." .
+wind:startedAt a owl:DatatypeProperty ; rdfs:range xsd:dateTime ; rdfs:comment "UTC start of an operational or maintenance event." .
+wind:endedAt a owl:DatatypeProperty ; rdfs:range xsd:dateTime ; rdfs:comment "UTC end of an operational or maintenance event." .
+wind:confidence a owl:DatatypeProperty ; rdfs:range xsd:decimal ; rdfs:comment "Confidence (0 to 1) of a diagnosis or curated link. Demo values are illustrative." .
+wind:rule a owl:DatatypeProperty ; rdfs:comment "Identifier of the curated rule that produced a diagnosis." .
+wind:evidenceNote a owl:DatatypeProperty ; rdfs:comment "Explanation of the support or lack of support for a relation." .
+wind:messagePattern a owl:DatatypeProperty ; rdfs:domain wind:AlarmType ; rdfs:comment "Case-insensitive regular expression that matches the alarm message text of this alarm type." .
+wind:operator a owl:DatatypeProperty ; rdfs:comment "Organisation that runs a farm node." .
+wind:exposes a owl:DatatypeProperty ; rdfs:comment "Governance note: which wind-core classes a farm node publishes." .
+wind:withholds a owl:DatatypeProperty ; rdfs:comment "Governance note: which local fields a farm node deliberately does not map." .
+wind:harvestedAt a owl:DatatypeProperty ; rdfs:range xsd:dateTime ; rdfs:comment "Hub registry: when the hub last harvested and validated this farm's graph (UTC)." .
+wind:tripleCount a owl:DatatypeProperty ; rdfs:range xsd:integer ; rdfs:comment "Hub registry: number of triples in the farm's named graph." .
+wind:message a owl:DatatypeProperty ; rdfs:comment "Reported status message." .
+wind:code a owl:DatatypeProperty ; rdfs:comment "Reported status code." .
+wind:status a owl:DatatypeProperty ; rdfs:comment "Reported status class (Stop, Warning, Informational, Communication)." .
+wind:action a owl:DatatypeProperty ; rdfs:comment "Maintenance action taken." .
+wind:note a owl:DatatypeProperty ; rdfs:comment "Log or usage note." .
+wind:ownedBy a owl:DatatypeProperty ; rdfs:comment "Named owner from dataset metadata." .
+wind:license a owl:DatatypeProperty ; rdfs:comment "Licence of a dataset." .
+wind:source a owl:DatatypeProperty ; rdfs:comment "Source location or creation statement." .
+wind:sourceDate a owl:DatatypeProperty ; rdfs:range xsd:date ; rdfs:comment "Publication or creation date." .
+
+# ---------- Observable properties ----------
+wind:Power a sosa:ObservableProperty ; rdfs:comment "Ten-minute average active power, in kW." .
+wind:EnergyExport a sosa:ObservableProperty ; rdfs:comment "Energy exported in the interval, in kWh." .
+wind:WindSpeed a sosa:ObservableProperty ; rdfs:comment "Wind speed, in metres per second." .
+wind:GearOilTemperature a sosa:ObservableProperty ; rdfs:comment "Gearbox oil temperature, in degrees Celsius." .

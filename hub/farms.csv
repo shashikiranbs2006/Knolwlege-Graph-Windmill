@@ -1,0 +1,3 @@
+farm_id,name,endpoint,harvest_endpoint,operator,exposes,withholds
+kelmarsh,Kelmarsh,http://ontop:8080/sparql,http://127.0.0.1:8080/sparql,Farm A node (Kelmarsh open data),"WindFarm, WindTurbine, Component, Observation, OperationalEvent, Diagnosis, MaintenanceEvent, Technician, Dataset",nothing
+penmanshiel,Penmanshiel,http://ontop-b:8080/sparql,http://127.0.0.1:8082/sparql,Farm B node (Penmanshiel open data),"WindFarm, WindTurbine, Component, Observation, OperationalEvent, Diagnosis, MaintenanceEvent, Dataset",work_orders.crew_name (technician names)

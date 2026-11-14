@@ -1,0 +1,35 @@
+flowchart LR
+  subgraph SRC["① Source files — data/kelmarsh/ (never modified)"]
+    ZIP["Kelmarsh_SCADA_2016 ZIP<br/>Turbine_Data_* + Status_*"]
+    STA["Kelmarsh_WT_static.csv"]
+    MET["v1_dataset_metadata.csv"]
+    SYN["v1_synthetic_maintenance.csv<br/>(2 fabricated cases)"]
+  end
+  PREP["prepare_data.py<br/>hash check · pick columns · UTC"]
+  IMP["build/import/*.csv<br/>(regenerable, git-ignored)"]
+  subgraph PGBOX["② PostgreSQL 17 — Docker volume vkg_pgdata  ★ the ONLY place facts are stored"]
+    T1["datasets · turbines · scada_readings<br/>status_events · synthetic_maintenance"]
+    V1["views: measurement_observations<br/>logical_sensors"]
+  end
+  SCH["db/schema.sql"]
+  LOAD["db/load.sql (TRUNCATE + COPY)"]
+  subgraph SEM["③ Semantic layer — vkg/ (text files, no RDF stored)"]
+    ONT["ontology.ttl<br/>classes + properties (vocabulary)"]
+    OBDA["mapping.obda<br/>authored rules: SQL → triples<br/>★ where relations are defined"]
+    R2["mapping.ttl (R2RML)<br/>generated, used at runtime"]
+    PROP["ontop.properties (JDBC)"]
+  end
+  ONTOP["④ Ontop 5.5 endpoint<br/>127.0.0.1:8080/sparql<br/>SPARQL → SQL rewriting"]
+  WB["⑤ Workbench :8081<br/>query_workbench.py + workbench.js"]
+  TST["run_demo.py · test_workbench.py<br/>queries/*.rq ⇄ *.sql"]
+  USER(("Engineer"))
+
+  ZIP & STA & MET & SYN --> PREP --> IMP --> LOAD --> T1
+  SCH --> T1
+  T1 --> V1
+  OBDA -- "ontop mapping to-r2rml" --> R2
+  R2 & ONT & PROP --> ONTOP
+  ONTOP -- "generated SQL" --> PGBOX
+  USER --> WB -- SPARQL --> ONTOP
+  TST --> ONTOP
+  TST -. "same answer?" .-> PGBOX

@@ -1,0 +1,22 @@
+# Use case 2: curated knowledge with edge properties (RDF 1.2 annotations).
+# "Which alarm types point to which faults, how confident is that link, and how often
+#  did each alarm type actually fire on each farm?"
+# The confidence sits ON the alarm-type -> fault edge (default graph, curated), like an
+# LPG relationship property, but in standard RDF 1.2. Alarm counts come from each farm's graph.
+PREFIX wind: <https://w3id.org/wind-core/ontology#>
+
+SELECT ?alarmType ?fault ?confidence ?rule ?farm (COUNT(DISTINCT ?event) AS ?alarmsFired) WHERE {
+  ?type a wind:AlarmType ; wind:messagePattern ?pattern ;
+        wind:suggestsFault ?f {| wind:confidence ?confidence ; wind:rule ?rule |} .
+  ?f wind:name ?fault .
+  BIND (STRAFTER(STR(?type), "alarm-type/") AS ?alarmType)
+  ?farmIri wind:farmId ?farm ; wind:graph ?g .
+  GRAPH ?g {
+    ?event a wind:OperationalEvent ; wind:message ?msg .
+    FILTER (CONTAINS(LCASE(?msg), "gear") || CONTAINS(LCASE(?msg), "generator fan"))
+  }
+  FILTER (REGEX(?msg, ?pattern, "i"))
+}
+GROUP BY ?alarmType ?fault ?confidence ?rule ?farm
+ORDER BY DESC(?confidence) ?alarmType ?farm
+LIMIT 50

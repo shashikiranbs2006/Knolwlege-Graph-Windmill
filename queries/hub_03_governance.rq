@@ -1,0 +1,15 @@
+# Use case 2: governance. What does each farm node publish, under which licence, what
+# does it deliberately withhold, and when did the hub last harvest and validate it?
+# Farm B never mapped its crew_name column, so its graph has no technicians at all.
+PREFIX wind: <https://w3id.org/wind-core/ontology#>
+
+SELECT ?farm ?operator ?withholds ?harvestedAt ?dataset ?licence ?recordKind ?technicians WHERE {
+  ?farmIri wind:farmId ?farm ; wind:operator ?operator ; wind:withholds ?withholds ; wind:graph ?g ; wind:harvestedAt ?harvestedAt .
+  {
+    GRAPH ?g { ?d a wind:Dataset ; wind:license ?licence ; wind:recordKind ?recordKind ; wind:source ?dataset . }
+  } UNION {
+    { SELECT ?g (COUNT(?t) AS ?technicians) WHERE { ?f wind:graph ?g . OPTIONAL { GRAPH ?g { ?t a wind:Technician } } } GROUP BY ?g }
+  }
+}
+ORDER BY ?farm DESC(?technicians) ?recordKind
+LIMIT 50

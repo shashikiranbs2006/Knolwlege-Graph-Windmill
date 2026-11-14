@@ -1,0 +1,14 @@
+# Use case 1 on the hub: "Which Kelmarsh turbines raised gear-bearing temperature alarms,
+# how often, and when was the latest?" Real Kelmarsh alarm events in farm A's graph.
+PREFIX wind: <https://w3id.org/wind-core/ontology#>
+
+SELECT ?turbine ?message (COUNT(DISTINCT ?event) AS ?alarms) (MAX(?start) AS ?latest) (SAMPLE(?kind) AS ?recordKind) WHERE {
+  GRAPH <https://w3id.org/wind-core/data/graph/kelmarsh> {
+    ?event a wind:OperationalEvent ; wind:message ?message ; wind:startedAt ?start ; wind:recordKind ?kind ; wind:aboutTurbine ?t .
+    ?t wind:name ?turbine .
+    FILTER (CONTAINS(LCASE(?message), "gear bearing"))
+  }
+}
+GROUP BY ?turbine ?message
+ORDER BY DESC(?alarms)
+LIMIT 50

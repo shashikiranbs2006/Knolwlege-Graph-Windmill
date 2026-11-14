@@ -1,0 +1,62 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix wind: <https://w3id.org/wind-core/ontology#> .
+@prefix sosa: <http://www.w3.org/ns/sosa/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix shapes: <https://w3id.org/wind-core/shapes#> .
+
+# wind-core conformance shapes. Every farm node must pass these, so they are the
+# technical "contract" for joining the shared graph (see check_graph.py).
+
+shapes:Farm a sh:NodeShape ; sh:targetClass wind:WindFarm ;
+  sh:property [ sh:path wind:farmId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path wind:name ; sh:minCount 1 ] ;
+  sh:property [ sh:path prov:wasDerivedFrom ; sh:minCount 1 ; sh:class wind:Dataset ] .
+
+shapes:Turbine a sh:NodeShape ; sh:targetClass wind:WindTurbine ;
+  sh:property [ sh:path wind:name ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path wind:locatedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:class wind:WindFarm ] ;
+  sh:property [ sh:path wind:hasComponent ; sh:class wind:Component ] ;
+  sh:property [ sh:path prov:wasDerivedFrom ; sh:minCount 1 ; sh:class wind:Dataset ] .
+
+shapes:Component a sh:NodeShape ; sh:targetClass wind:Component ;
+  sh:property [ sh:path wind:recordKind ; sh:minCount 1 ] ;
+  sh:property [ sh:path [ sh:inversePath wind:hasComponent ] ; sh:minCount 1 ; sh:maxCount 1 ; sh:class wind:WindTurbine ] .
+
+shapes:Event a sh:NodeShape ; sh:targetClass wind:OperationalEvent ;
+  sh:property [ sh:path wind:aboutTurbine ; sh:minCount 1 ; sh:maxCount 1 ; sh:class wind:WindTurbine ] ;
+  sh:property [ sh:path wind:startedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] ;
+  sh:property [ sh:path wind:message ; sh:minCount 1 ] ;
+  sh:property [ sh:path wind:sourceRow ; sh:minCount 1 ; sh:datatype xsd:integer ] ;
+  sh:property [ sh:path wind:indicatesFault ; sh:class wind:FaultCondition ] .
+
+shapes:Fault a sh:NodeShape ; sh:targetClass wind:FaultCondition ;
+  sh:property [ sh:path skos:prefLabel ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path wind:typicalComponent ; sh:minCount 1 ; sh:in ( wind:Gearbox wind:Generator wind:RotorBlade ) ] .
+
+shapes:Diagnosis a sh:NodeShape ; sh:targetClass wind:Diagnosis ;
+  sh:property [ sh:path wind:diagnosedEvent ; sh:minCount 1 ; sh:maxCount 1 ; sh:class wind:OperationalEvent ] ;
+  sh:property [ sh:path wind:diagnosedFault ; sh:minCount 1 ; sh:maxCount 1 ; sh:class wind:FaultCondition ] ;
+  sh:property [ sh:path wind:confidence ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:decimal ; sh:minInclusive 0 ; sh:maxInclusive 1 ] ;
+  sh:property [ sh:path wind:rule ; sh:minCount 1 ] .
+
+shapes:Maintenance a sh:NodeShape ; sh:targetClass wind:MaintenanceEvent ;
+  sh:property [ sh:path wind:performedOn ; sh:minCount 1 ; sh:maxCount 1 ; sh:class wind:Component ] ;
+  sh:property [ sh:path wind:addresses ; sh:minCount 1 ; sh:class wind:FaultCondition ] ;
+  sh:property [ sh:path wind:action ; sh:minCount 1 ] ;
+  sh:property [ sh:path wind:startedAt ; sh:minCount 1 ; sh:datatype xsd:dateTime ] ;
+  sh:property [ sh:path wind:recordKind ; sh:minCount 1 ; sh:in ( "observed_source" "synthetic_demo" ) ] .
+
+shapes:Dataset a sh:NodeShape ; sh:targetClass wind:Dataset ;
+  sh:property [ sh:path wind:ownedBy ; sh:minCount 1 ] ;
+  sh:property [ sh:path wind:license ; sh:minCount 1 ] ;
+  sh:property [ sh:path wind:source ; sh:minCount 1 ] ;
+  sh:property [ sh:path wind:recordKind ; sh:minCount 1 ; sh:in ( "observed_source" "synthetic_demo" "curated_demo" "derived_assumption" ) ] .
+
+shapes:Observation a sh:NodeShape ; sh:targetClass sosa:Observation ;
+  sh:property [ sh:path sosa:hasFeatureOfInterest ; sh:minCount 1 ; sh:maxCount 1 ; sh:class wind:WindTurbine ] ;
+  sh:property [ sh:path sosa:observedProperty ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path sosa:resultTime ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] ;
+  sh:property [ sh:path sosa:hasSimpleResult ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:double ] ;
+  sh:property [ sh:path wind:unit ; sh:minCount 1 ; sh:maxCount 1 ] .

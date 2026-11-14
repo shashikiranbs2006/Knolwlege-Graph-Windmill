@@ -1,0 +1,6 @@
+fault_code,label,component_type,description
+GearBearingOverheating,Gearbox bearing overheating,Gearbox,Bearing temperature above its alarm limit; often a symptom of wear or poor lubrication
+GearboxBearingWear,Gearbox bearing wear,Gearbox,Progressive mechanical wear of a gearbox bearing
+GearboxLubricationFault,Gearbox lubrication fault,Gearbox,Insufficient oil pressure or flow in the gearbox lubrication circuit
+GearOilContamination,Gear oil contamination,Gearbox,Particles or debris in the gear oil; can indicate gear or bearing wear
+GeneratorCoolingFault,Generator cooling fault,Generator,Generator cooling fan overload or failure

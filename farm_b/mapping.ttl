@@ -1,0 +1,691 @@
+@prefix rr: <http://www.w3.org/ns/r2rml#> .
+@prefix wind: <https://w3id.org/wind-core/ontology#> .
+@prefix data: <https://w3id.org/wind-core/data/> .
+@prefix sosa: <http://www.w3.org/ns/sosa/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix obda: <https://w3id.org/obda/vocabulary#> .
+
+<urn:r2rml:b_datasets> a rr:TriplesMap;
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:class wind:Dataset;
+      rr:template "https://w3id.org/wind-core/data/dataset/{source_ref}";
+      rr:termType rr:IRI
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate wind:note;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "terms";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "kind"
+        ];
+      rr:predicate wind:recordKind
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:column "owner_org"
+        ];
+      rr:predicate wind:ownedBy
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:license;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "licence";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:sourceDate;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:datatype xsd:date;
+          rr:column "published";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:source;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:column "origin"
+        ]
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT source_ref, kind, origin, published, owner_org, licence, terms FROM data_sources"
+    ] .
+
+<urn:r2rml:b_site> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate wind:farmId;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "site_code";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:column "site_name"
+        ];
+      rr:predicate wind:name
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:country;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "country";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate prov:wasDerivedFrom;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:IRI;
+          rr:template "https://w3id.org/wind-core/data/dataset/{source_ref}"
+        ]
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT site_code, site_name, country, source_ref FROM site"
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:class wind:WindFarm;
+      rr:template "https://w3id.org/wind-core/data/farm/{site_code}";
+      rr:termType rr:IRI
+    ] .
+
+<urn:r2rml:b_wtg> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:template "https://w3id.org/wind-core/data/farm/{site_code}";
+          rr:termType rr:IRI
+        ];
+      rr:predicate wind:locatedAt
+    ], [ a rr:PredicateObjectMap;
+      rr:object "observed_source";
+      rr:predicate wind:recordKind
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate prov:wasDerivedFrom;
+      rr:object <https://w3id.org/wind-core/data/dataset/penmanshiel-2016>
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:ratedPowerKW;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "rated_kw";
+          rr:datatype xsd:decimal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "make"
+        ];
+      rr:predicate wind:manufacturer
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:model;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "type_name";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:name;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:column "wtg_label"
+        ]
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT wtg_code, site_code, wtg_label, make, type_name, rated_kw FROM wtg"
+    ];
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}";
+      rr:termType rr:IRI;
+      rr:class wind:WindTurbine
+    ] .
+
+<urn:r2rml:b_components-03a211dd-cfb7-49ac-8531-69f43c09c390> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate wind:name;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "part";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:template "https://w3id.org/wind-core/ontology#{part}";
+          rr:termType rr:IRI
+        ];
+      rr:predicate rdf:type
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate prov:wasDerivedFrom;
+      rr:object <https://w3id.org/wind-core/data/dataset/farmb-component-assumption>
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:recordKind;
+      rr:object "derived_assumption"
+    ];
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:termType rr:IRI;
+      rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}/component/{part}"
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT wtg_code, site_code, part FROM wtg_parts"
+    ] .
+
+<urn:r2rml:b_components-93f364bb-a168-48cf-9f24-7b6e4fc9fd5d> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate wind:hasComponent;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}/component/{part}";
+          rr:termType rr:IRI
+        ]
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT wtg_code, site_code, part FROM wtg_parts"
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}";
+      rr:termType rr:IRI
+    ] .
+
+<urn:r2rml:b_power> a rr:TriplesMap;
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:termType rr:IRI;
+      rr:class wind:PerformanceMetric, sosa:Observation;
+      rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}/observation/{src_line}/Power"
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT t.src_file, t.src_line, t.wtg_code, w.site_code, t.ts, t.val FROM tenmin t JOIN wtg w ON w.wtg_code = t.wtg_code WHERE t.signal_name = 'P_avg'"
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate sosa:hasSimpleResult;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:column "val";
+          rr:datatype xsd:double
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:unit;
+      rr:object <http://qudt.org/vocab/unit/KiloW>
+    ], [ a rr:PredicateObjectMap;
+      rr:object <https://w3id.org/wind-core/data/dataset/penmanshiel-2016>;
+      rr:predicate prov:wasDerivedFrom
+    ], [ a rr:PredicateObjectMap;
+      rr:object "observed_source";
+      rr:predicate wind:recordKind
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:sourceRow;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "src_line";
+          rr:termType rr:Literal;
+          rr:datatype xsd:integer
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:sourceFile;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "src_file";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:object "Power";
+      rr:predicate wind:signal
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:IRI;
+          rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}"
+        ];
+      rr:predicate sosa:hasFeatureOfInterest
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate sosa:resultTime;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:datatype xsd:dateTime;
+          rr:column "ts";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:object wind:Power;
+      rr:predicate sosa:observedProperty
+    ] .
+
+<urn:r2rml:b_energy> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate wind:signal;
+      rr:object "EnergyExport"
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "val";
+          rr:datatype xsd:double
+        ];
+      rr:predicate sosa:hasSimpleResult
+    ], [ a rr:PredicateObjectMap;
+      rr:object <http://qudt.org/vocab/unit/KiloW-HR>;
+      rr:predicate wind:unit
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "src_file";
+          rr:termType rr:Literal
+        ];
+      rr:predicate wind:sourceFile
+    ], [ a rr:PredicateObjectMap;
+      rr:object "observed_source";
+      rr:predicate wind:recordKind
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:sourceRow;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:datatype xsd:integer;
+          rr:termType rr:Literal;
+          rr:column "src_line"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:object <https://w3id.org/wind-core/data/dataset/penmanshiel-2016>;
+      rr:predicate prov:wasDerivedFrom
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "ts";
+          rr:datatype xsd:dateTime
+        ];
+      rr:predicate sosa:resultTime
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate sosa:observedProperty;
+      rr:object wind:EnergyExport
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}";
+          rr:termType rr:IRI
+        ];
+      rr:predicate sosa:hasFeatureOfInterest
+    ];
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:class sosa:Observation, wind:PerformanceMetric;
+      rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}/observation/{src_line}/EnergyExport";
+      rr:termType rr:IRI
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT t.src_file, t.src_line, t.wtg_code, w.site_code, t.ts, t.val FROM tenmin t JOIN wtg w ON w.wtg_code = t.wtg_code WHERE t.signal_name = 'E_exp'"
+    ] .
+
+<urn:r2rml:b_wind> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate sosa:observedProperty;
+      rr:object wind:WindSpeed
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}";
+          rr:termType rr:IRI
+        ];
+      rr:predicate sosa:hasFeatureOfInterest
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "ts";
+          rr:datatype xsd:dateTime;
+          rr:termType rr:Literal
+        ];
+      rr:predicate sosa:resultTime
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate sosa:hasSimpleResult;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "val";
+          rr:datatype xsd:double;
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:object <http://qudt.org/vocab/unit/M-PER-SEC>;
+      rr:predicate wind:unit
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:signal;
+      rr:object "WindSpeed"
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:sourceRow;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "src_line";
+          rr:termType rr:Literal;
+          rr:datatype xsd:integer
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "src_file";
+          rr:termType rr:Literal
+        ];
+      rr:predicate wind:sourceFile
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:recordKind;
+      rr:object "observed_source"
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate prov:wasDerivedFrom;
+      rr:object <https://w3id.org/wind-core/data/dataset/penmanshiel-2016>
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT t.src_file, t.src_line, t.wtg_code, w.site_code, t.ts, t.val FROM tenmin t JOIN wtg w ON w.wtg_code = t.wtg_code WHERE t.signal_name = 'WS_avg'"
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}/observation/{src_line}/WindSpeed";
+      rr:class wind:EnvironmentalCondition, sosa:Observation;
+      rr:termType rr:IRI
+    ] .
+
+<urn:r2rml:b_gear_oil> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate wind:unit;
+      rr:object <http://qudt.org/vocab/unit/DEG_C>
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate sosa:hasSimpleResult;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:column "val";
+          rr:datatype xsd:double
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:datatype xsd:dateTime;
+          rr:termType rr:Literal;
+          rr:column "ts"
+        ];
+      rr:predicate sosa:resultTime
+    ], [ a rr:PredicateObjectMap;
+      rr:object "GearOilTemperature";
+      rr:predicate wind:signal
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate sosa:hasFeatureOfInterest;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:IRI;
+          rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:object wind:GearOilTemperature;
+      rr:predicate sosa:observedProperty
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate prov:wasDerivedFrom;
+      rr:object <https://w3id.org/wind-core/data/dataset/penmanshiel-2016>
+    ], [ a rr:PredicateObjectMap;
+      rr:object "observed_source";
+      rr:predicate wind:recordKind
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "src_line";
+          rr:datatype xsd:integer;
+          rr:termType rr:Literal
+        ];
+      rr:predicate wind:sourceRow
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "src_file";
+          rr:termType rr:Literal
+        ];
+      rr:predicate wind:sourceFile
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT t.src_file, t.src_line, t.wtg_code, w.site_code, t.ts, t.val FROM tenmin t JOIN wtg w ON w.wtg_code = t.wtg_code WHERE t.signal_name = 'T_gear_oil'"
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:termType rr:IRI;
+      rr:class wind:ComponentCondition, sosa:Observation;
+      rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}/observation/{src_line}/GearOilTemperature"
+    ] .
+
+<urn:r2rml:b_alarms> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate sosa:hasFeatureOfInterest;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:IRI;
+          rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:datatype xsd:dateTime;
+          rr:column "t_from"
+        ];
+      rr:predicate wind:startedAt
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:message;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "alarm_text";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:aboutTurbine;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:IRI;
+          rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:sourceRow;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "line_no";
+          rr:datatype xsd:integer;
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:recordKind;
+      rr:object "observed_source"
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate prov:wasDerivedFrom;
+      rr:object <https://w3id.org/wind-core/data/dataset/penmanshiel-2016>
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:column "alarm_code"
+        ];
+      rr:predicate wind:code
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:status;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:termType rr:Literal;
+          rr:column "severity"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "src_file";
+          rr:termType rr:Literal
+        ];
+      rr:predicate wind:sourceFile
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT a.src_file, a.line_no, a.wtg_code, w.site_code, a.t_from, a.alarm_text, a.alarm_code, a.severity FROM alarm_log a JOIN wtg w ON w.wtg_code = a.wtg_code"
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}/event/{line_no}";
+      rr:class wind:OperationalEvent;
+      rr:termType rr:IRI
+    ] .
+
+<urn:r2rml:b_alarm_ends> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "t_to";
+          rr:termType rr:Literal;
+          rr:datatype xsd:dateTime
+        ];
+      rr:predicate wind:endedAt
+    ];
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}/event/{line_no}";
+      rr:termType rr:IRI
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT a.line_no, a.wtg_code, w.site_code, a.t_to FROM alarm_log a JOIN wtg w ON w.wtg_code = a.wtg_code WHERE a.t_to IS NOT NULL"
+    ] .
+
+<urn:r2rml:b_faults> a rr:TriplesMap;
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT fault_ref, title, details, part_type FROM fault_catalog"
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate skos:prefLabel;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:column "title"
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:name;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "title";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate skos:definition;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "details";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:template "https://w3id.org/wind-core/ontology#{part_type}";
+          rr:termType rr:IRI
+        ];
+      rr:predicate wind:typicalComponent
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:recordKind;
+      rr:object "curated_demo"
+    ], [ a rr:PredicateObjectMap;
+      rr:object <https://w3id.org/wind-core/data/dataset/v11-curated-fault-rules>;
+      rr:predicate prov:wasDerivedFrom
+    ];
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:termType rr:IRI;
+      rr:class wind:FaultCondition;
+      rr:template "https://w3id.org/wind-core/data/fault/{fault_ref}"
+    ] .
+
+<urn:r2rml:b_diagnoses-5f9be325-c236-4f62-8448-484b65ecda4f> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:column "why";
+          rr:termType rr:Literal
+        ];
+      rr:predicate wind:evidenceNote
+    ], [ a rr:PredicateObjectMap;
+      rr:object "curated_demo";
+      rr:predicate wind:recordKind
+    ], [ a rr:PredicateObjectMap;
+      rr:object <https://w3id.org/wind-core/data/dataset/v11-curated-fault-rules>;
+      rr:predicate prov:wasDerivedFrom
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:diagnosedEvent;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}/event/{line_no}";
+          rr:termType rr:IRI
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:IRI;
+          rr:template "https://w3id.org/wind-core/data/fault/{fault_ref}"
+        ];
+      rr:predicate wind:diagnosedFault
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:rule;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "rule_ref";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:datatype xsd:decimal;
+          rr:column "weight"
+        ];
+      rr:predicate wind:confidence
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT wtg_code, site_code, line_no, rule_ref, fault_ref, weight, why FROM alarm_diagnosis"
+    ];
+  rr:subjectMap [ a rr:TermMap, rr:SubjectMap;
+      rr:termType rr:IRI;
+      rr:template "https://w3id.org/wind-core/data/farm/{site_code}/diagnosis/{wtg_code}/{line_no}/{rule_ref}";
+      rr:class wind:Diagnosis
+    ] .
+
+<urn:r2rml:b_diagnoses-3cbd8a21-aa4b-441d-bd76-0612183b17fc> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate wind:indicatesFault;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:IRI;
+          rr:template "https://w3id.org/wind-core/data/fault/{fault_ref}"
+        ]
+    ];
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:termType rr:IRI;
+      rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}/event/{line_no}"
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT wtg_code, site_code, line_no, rule_ref, fault_ref, weight, why FROM alarm_diagnosis"
+    ] .
+
+<urn:r2rml:b_fault_affects> a rr:TriplesMap;
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT DISTINCT d.fault_ref, d.site_code, d.wtg_code, f.part_type FROM alarm_diagnosis d JOIN fault_catalog f ON f.fault_ref = d.fault_ref"
+    ];
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:IRI;
+          rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}/component/{part_type}"
+        ];
+      rr:predicate wind:affectsComponent
+    ];
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:termType rr:IRI;
+      rr:template "https://w3id.org/wind-core/data/fault/{fault_ref}"
+    ] .
+
+<urn:r2rml:b_work_orders> a rr:TriplesMap;
+  rr:predicateObjectMap [ a rr:PredicateObjectMap;
+      rr:predicate wind:recordKind;
+      rr:object "synthetic_demo"
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:IRI;
+          rr:template "https://w3id.org/wind-core/data/fault/{fault_ref}"
+        ];
+      rr:predicate wind:addresses
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:evidenceNote;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "notes";
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:endedAt;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:column "closed";
+          rr:datatype xsd:dateTime;
+          rr:termType rr:Literal
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:column "job_type"
+        ];
+      rr:predicate wind:action
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:termType rr:Literal;
+          rr:column "opened";
+          rr:datatype xsd:dateTime
+        ];
+      rr:predicate wind:startedAt
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate wind:triggeredBy;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}/event/{alarm_line}";
+          rr:termType rr:IRI
+        ]
+    ], [ a rr:PredicateObjectMap;
+      rr:objectMap [ a rr:ObjectMap, rr:TermMap;
+          rr:template "https://w3id.org/wind-core/data/farm/{site_code}/turbine/{wtg_code}/component/{part_type}";
+          rr:termType rr:IRI
+        ];
+      rr:predicate wind:performedOn
+    ], [ a rr:PredicateObjectMap;
+      rr:predicate prov:wasDerivedFrom;
+      rr:objectMap [ a rr:TermMap, rr:ObjectMap;
+          rr:template "https://w3id.org/wind-core/data/dataset/{source_ref}";
+          rr:termType rr:IRI
+        ]
+    ];
+  rr:logicalTable [ a rr:R2RMLView;
+      rr:sqlQuery "SELECT o.wo_number, w.site_code, o.wtg_code, o.alarm_line, o.fault_ref, o.part_type, o.job_type, o.opened, o.closed, o.notes, o.source_ref FROM work_orders o JOIN wtg w ON w.wtg_code = o.wtg_code"
+    ];
+  rr:subjectMap [ a rr:SubjectMap, rr:TermMap;
+      rr:class wind:MaintenanceEvent;
+      rr:template "https://w3id.org/wind-core/data/farm/{site_code}/maintenance/{wo_number}";
+      rr:termType rr:IRI
+    ] .

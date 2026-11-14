@@ -1,0 +1,65 @@
+[PrefixDeclaration]
+wind:   https://w3id.org/wind-core/ontology#
+data:   https://w3id.org/wind-core/data/
+sosa:   http://www.w3.org/ns/sosa/
+prov:   http://www.w3.org/ns/prov#
+skos:   http://www.w3.org/2004/02/skos/core#
+xsd:    http://www.w3.org/2001/XMLSchema#
+
+[MappingDeclaration] @collection [[
+mappingId     b_datasets
+target        data:dataset/{source_ref} a wind:Dataset ; wind:recordKind {kind} ; wind:source {origin} ; wind:sourceDate {published}^^xsd:date ; wind:ownedBy {owner_org} ; wind:license {licence} ; wind:note {terms} .
+source        SELECT source_ref, kind, origin, published, owner_org, licence, terms FROM data_sources
+
+mappingId     b_site
+target        data:farm/{site_code} a wind:WindFarm ; wind:farmId {site_code} ; wind:name {site_name} ; wind:country {country} ; prov:wasDerivedFrom data:dataset/{source_ref} .
+source        SELECT site_code, site_name, country, source_ref FROM site
+
+mappingId     b_wtg
+target        data:farm/{site_code}/turbine/{wtg_code} a wind:WindTurbine ; wind:name {wtg_label} ; wind:manufacturer {make} ; wind:model {type_name} ; wind:ratedPowerKW {rated_kw}^^xsd:decimal ; wind:locatedAt data:farm/{site_code} ; prov:wasDerivedFrom data:dataset/penmanshiel-2016 ; wind:recordKind "observed_source" .
+source        SELECT wtg_code, site_code, wtg_label, make, type_name, rated_kw FROM wtg
+
+mappingId     b_components
+target        data:farm/{site_code}/turbine/{wtg_code}/component/{part} a wind:{part} ; wind:name {part} ; wind:recordKind "derived_assumption" ; prov:wasDerivedFrom data:dataset/farmb-component-assumption . data:farm/{site_code}/turbine/{wtg_code} wind:hasComponent data:farm/{site_code}/turbine/{wtg_code}/component/{part} .
+source        SELECT wtg_code, site_code, part FROM wtg_parts
+
+mappingId     b_power
+target        data:farm/{site_code}/turbine/{wtg_code}/observation/{src_line}/Power a sosa:Observation, wind:PerformanceMetric ; sosa:hasFeatureOfInterest data:farm/{site_code}/turbine/{wtg_code} ; sosa:observedProperty wind:Power ; sosa:resultTime {ts}^^xsd:dateTime ; sosa:hasSimpleResult {val}^^xsd:double ; wind:unit <http://qudt.org/vocab/unit/KiloW> ; wind:signal "Power" ; wind:sourceFile {src_file} ; wind:sourceRow {src_line}^^xsd:integer ; wind:recordKind "observed_source" ; prov:wasDerivedFrom data:dataset/penmanshiel-2016 .
+source        SELECT t.src_file, t.src_line, t.wtg_code, w.site_code, t.ts, t.val FROM tenmin t JOIN wtg w ON w.wtg_code = t.wtg_code WHERE t.signal_name = 'P_avg'
+
+mappingId     b_energy
+target        data:farm/{site_code}/turbine/{wtg_code}/observation/{src_line}/EnergyExport a sosa:Observation, wind:PerformanceMetric ; sosa:hasFeatureOfInterest data:farm/{site_code}/turbine/{wtg_code} ; sosa:observedProperty wind:EnergyExport ; sosa:resultTime {ts}^^xsd:dateTime ; sosa:hasSimpleResult {val}^^xsd:double ; wind:unit <http://qudt.org/vocab/unit/KiloW-HR> ; wind:signal "EnergyExport" ; wind:sourceFile {src_file} ; wind:sourceRow {src_line}^^xsd:integer ; wind:recordKind "observed_source" ; prov:wasDerivedFrom data:dataset/penmanshiel-2016 .
+source        SELECT t.src_file, t.src_line, t.wtg_code, w.site_code, t.ts, t.val FROM tenmin t JOIN wtg w ON w.wtg_code = t.wtg_code WHERE t.signal_name = 'E_exp'
+
+mappingId     b_wind
+target        data:farm/{site_code}/turbine/{wtg_code}/observation/{src_line}/WindSpeed a sosa:Observation, wind:EnvironmentalCondition ; sosa:hasFeatureOfInterest data:farm/{site_code}/turbine/{wtg_code} ; sosa:observedProperty wind:WindSpeed ; sosa:resultTime {ts}^^xsd:dateTime ; sosa:hasSimpleResult {val}^^xsd:double ; wind:unit <http://qudt.org/vocab/unit/M-PER-SEC> ; wind:signal "WindSpeed" ; wind:sourceFile {src_file} ; wind:sourceRow {src_line}^^xsd:integer ; wind:recordKind "observed_source" ; prov:wasDerivedFrom data:dataset/penmanshiel-2016 .
+source        SELECT t.src_file, t.src_line, t.wtg_code, w.site_code, t.ts, t.val FROM tenmin t JOIN wtg w ON w.wtg_code = t.wtg_code WHERE t.signal_name = 'WS_avg'
+
+mappingId     b_gear_oil
+target        data:farm/{site_code}/turbine/{wtg_code}/observation/{src_line}/GearOilTemperature a sosa:Observation, wind:ComponentCondition ; sosa:hasFeatureOfInterest data:farm/{site_code}/turbine/{wtg_code} ; sosa:observedProperty wind:GearOilTemperature ; sosa:resultTime {ts}^^xsd:dateTime ; sosa:hasSimpleResult {val}^^xsd:double ; wind:unit <http://qudt.org/vocab/unit/DEG_C> ; wind:signal "GearOilTemperature" ; wind:sourceFile {src_file} ; wind:sourceRow {src_line}^^xsd:integer ; wind:recordKind "observed_source" ; prov:wasDerivedFrom data:dataset/penmanshiel-2016 .
+source        SELECT t.src_file, t.src_line, t.wtg_code, w.site_code, t.ts, t.val FROM tenmin t JOIN wtg w ON w.wtg_code = t.wtg_code WHERE t.signal_name = 'T_gear_oil'
+
+mappingId     b_alarms
+target        data:farm/{site_code}/turbine/{wtg_code}/event/{line_no} a wind:OperationalEvent ; wind:aboutTurbine data:farm/{site_code}/turbine/{wtg_code} ; sosa:hasFeatureOfInterest data:farm/{site_code}/turbine/{wtg_code} ; wind:startedAt {t_from}^^xsd:dateTime ; wind:message {alarm_text} ; wind:code {alarm_code} ; wind:status {severity} ; wind:sourceFile {src_file} ; wind:sourceRow {line_no}^^xsd:integer ; wind:recordKind "observed_source" ; prov:wasDerivedFrom data:dataset/penmanshiel-2016 .
+source        SELECT a.src_file, a.line_no, a.wtg_code, w.site_code, a.t_from, a.alarm_text, a.alarm_code, a.severity FROM alarm_log a JOIN wtg w ON w.wtg_code = a.wtg_code
+
+mappingId     b_alarm_ends
+target        data:farm/{site_code}/turbine/{wtg_code}/event/{line_no} wind:endedAt {t_to}^^xsd:dateTime .
+source        SELECT a.line_no, a.wtg_code, w.site_code, a.t_to FROM alarm_log a JOIN wtg w ON w.wtg_code = a.wtg_code WHERE a.t_to IS NOT NULL
+
+mappingId     b_faults
+target        data:fault/{fault_ref} a wind:FaultCondition ; skos:prefLabel {title} ; wind:name {title} ; skos:definition {details} ; wind:typicalComponent wind:{part_type} ; wind:recordKind "curated_demo" ; prov:wasDerivedFrom data:dataset/v11-curated-fault-rules .
+source        SELECT fault_ref, title, details, part_type FROM fault_catalog
+
+mappingId     b_diagnoses
+target        data:farm/{site_code}/diagnosis/{wtg_code}/{line_no}/{rule_ref} a wind:Diagnosis ; wind:diagnosedEvent data:farm/{site_code}/turbine/{wtg_code}/event/{line_no} ; wind:diagnosedFault data:fault/{fault_ref} ; wind:confidence {weight}^^xsd:decimal ; wind:rule {rule_ref} ; wind:evidenceNote {why} ; wind:recordKind "curated_demo" ; prov:wasDerivedFrom data:dataset/v11-curated-fault-rules . data:farm/{site_code}/turbine/{wtg_code}/event/{line_no} wind:indicatesFault data:fault/{fault_ref} .
+source        SELECT wtg_code, site_code, line_no, rule_ref, fault_ref, weight, why FROM alarm_diagnosis
+
+mappingId     b_fault_affects
+target        data:fault/{fault_ref} wind:affectsComponent data:farm/{site_code}/turbine/{wtg_code}/component/{part_type} .
+source        SELECT DISTINCT d.fault_ref, d.site_code, d.wtg_code, f.part_type FROM alarm_diagnosis d JOIN fault_catalog f ON f.fault_ref = d.fault_ref
+
+mappingId     b_work_orders
+target        data:farm/{site_code}/maintenance/{wo_number} a wind:MaintenanceEvent ; wind:startedAt {opened}^^xsd:dateTime ; wind:endedAt {closed}^^xsd:dateTime ; wind:action {job_type} ; wind:recordKind "synthetic_demo" ; wind:evidenceNote {notes} ; wind:addresses data:fault/{fault_ref} ; wind:triggeredBy data:farm/{site_code}/turbine/{wtg_code}/event/{alarm_line} ; wind:performedOn data:farm/{site_code}/turbine/{wtg_code}/component/{part_type} ; prov:wasDerivedFrom data:dataset/{source_ref} .
+source        SELECT o.wo_number, w.site_code, o.wtg_code, o.alarm_line, o.fault_ref, o.part_type, o.job_type, o.opened, o.closed, o.notes, o.source_ref FROM work_orders o JOIN wtg w ON w.wtg_code = o.wtg_code
+]]

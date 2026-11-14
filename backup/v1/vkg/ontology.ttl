@@ -1,0 +1,58 @@
+@prefix : <https://example.org/wind-v1/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sosa: <http://www.w3.org/ns/sosa/> .
+@prefix time: <http://www.w3.org/2006/time#> .
+
+<https://example.org/wind-v1> a owl:Ontology ;
+  rdfs:comment "V1 local demonstration vocabulary. External terms are reused without importing their full ontologies; only OWL 2 QL-friendly axioms are used by Ontop." .
+
+:WindFarm a owl:Class ; rdfs:comment "A site containing wind turbines." .
+:WindTurbine a owl:Class ; rdfs:comment "A turbine identified by the source static table." .
+:RotorBlade a owl:Class ; rdfs:comment "A rotor blade; no individual blade asset records are available in V1." .
+:Gearbox a owl:Class ; rdfs:comment "A gearbox component; V1 examples are synthetic." .
+:Generator a owl:Class ; rdfs:comment "A generator component; V1 examples are synthetic." .
+:Sensor a owl:Class ; rdfs:subClassOf sosa:Sensor ; rdfs:comment "A logical SCADA signal channel, not a verified physical sensor asset." .
+:SCADADataStream a owl:Class ; rdfs:comment "The time-series stream for one turbine." .
+:OperationalEvent a owl:Class ; rdfs:comment "A status event reported by the source archive." .
+:EnvironmentalCondition a owl:Class ; rdfs:comment "An environmental observation, such as wind speed." .
+:PerformanceMetric a owl:Class ; rdfs:comment "A performance observation, such as power or interval energy." .
+:FaultCondition a owl:Class ; rdfs:comment "A proposed fault; V1 individuals are synthetic and not verified diagnoses." .
+:MaintenanceEvent a owl:Class ; rdfs:comment "Maintenance activity; V1 individuals are fictional examples." .
+:ReplacementPart a owl:Class ; rdfs:comment "A replacement part; V1 individuals are fictional examples." .
+:Technician a owl:Class ; rdfs:comment "A technician; V1 individuals are fictional examples." .
+:MaintenanceLog a owl:Class ; rdfs:comment "A work-log entry; V1 individuals are fictional examples." .
+:Dataset a owl:Class ; rdfs:comment "A source or synthetic data collection with ownership and usage metadata." .
+
+:locatedAt a owl:ObjectProperty ; rdfs:comment "Links a turbine to its wind farm." .
+:hasComponent a owl:ObjectProperty ; rdfs:comment "Links a turbine to a component. V1 component individuals are synthetic." .
+:indicatesFault a owl:ObjectProperty ; rdfs:comment "Links a source event to a hypothetical fault in V1." .
+:affectsComponent a owl:ObjectProperty ; rdfs:comment "Links a hypothetical fault to its illustrative component." .
+:performedOn a owl:ObjectProperty ; rdfs:comment "Links fictional maintenance to its illustrative component." .
+:reportedBy a owl:ObjectProperty ; rdfs:comment "Links fictional maintenance to its illustrative technician." .
+:hasLog a owl:ObjectProperty ; rdfs:comment "Links fictional maintenance to its illustrative log." .
+:usesPart a owl:ObjectProperty ; rdfs:comment "Links fictional maintenance to its illustrative replacement part." .
+:fromStream a owl:ObjectProperty ; rdfs:comment "Links an observation to a turbine stream." .
+:forTurbine a owl:ObjectProperty ; rdfs:comment "Links a turbine stream to its turbine." .
+:unit a owl:ObjectProperty ; rdfs:comment "Links a numeric observation to a QUDT unit identifier." .
+:recordKind a owl:DatatypeProperty ; rdfs:comment "observed_source or synthetic_demo; must be shown with mixed results." .
+:sourceFile a owl:DatatypeProperty ; rdfs:comment "Filename within the source ZIP archive." .
+:sourceRow a owl:DatatypeProperty ; rdfs:comment "One-based data row within a source CSV file." .
+:signal a owl:DatatypeProperty ; rdfs:comment "Selected SCADA signal name." .
+:startedAt a owl:DatatypeProperty ; rdfs:comment "UTC start of an operational or maintenance event." .
+:endedAt a owl:DatatypeProperty ; rdfs:comment "UTC end of an operational or maintenance event." .
+:confidence a owl:DatatypeProperty ; rdfs:comment "Synthetic relation evidence score; zero means no real-world evidence." .
+:evidenceNote a owl:DatatypeProperty ; rdfs:comment "Explanation of the support or lack of support for a relation." .
+:message a owl:DatatypeProperty ; rdfs:comment "Reported source status message." .
+:code a owl:DatatypeProperty ; rdfs:comment "Reported source status code." .
+:name a owl:DatatypeProperty ; rdfs:comment "Display name." .
+:action a owl:DatatypeProperty ; rdfs:comment "Illustrative maintenance action." .
+:note a owl:DatatypeProperty ; rdfs:comment "Log or usage note." .
+:ownedBy a owl:DatatypeProperty ; rdfs:comment "Named owner from dataset metadata." .
+:license a owl:DatatypeProperty ; rdfs:comment "Source licence or not specified for demonstration data." .
+:source a owl:DatatypeProperty ; rdfs:comment "Source location or creation statement." .
+:sourceDate a owl:DatatypeProperty ; rdfs:comment "Publication or synthetic creation date." .
+
+:Power a sosa:ObservableProperty ; rdfs:comment "Ten-minute average active power, in kW." .
+:EnergyExport a sosa:ObservableProperty ; rdfs:comment "Energy exported in the interval, in kWh." .
+:WindSpeed a sosa:ObservableProperty ; rdfs:comment "Wind speed, in metres per second." .

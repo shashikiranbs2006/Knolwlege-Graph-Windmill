@@ -1,0 +1,33 @@
+// Farm C: an existing Neo4j knowledge graph, built the way most of the reviewed studies
+// do it (labelled property graph). Based on the team lead's Use Case 1 example; all
+// records are fictional demo data.
+MATCH (n) DETACH DELETE n;
+CREATE (site:WindFarm {id:'farm-c', name:'Farm C (Neo4j demo)', country:'CH'})
+CREATE (t:WindTurbine {id:'T-07', capacity_MW:5})
+CREATE (t8:WindTurbine {id:'T-08', capacity_MW:5})
+CREATE (g:Gearbox {id:'G-07'})
+CREATE (g8:Gearbox {id:'G-08'})
+CREATE (a:OperationalEvent {id:'A-101', type:'High oil temperature', at:'2025-03-12T03:00:00Z'})
+CREATE (a2:OperationalEvent {id:'A-117', type:'High oil temperature', at:'2025-06-02T22:40:00Z'})
+CREATE (f:FaultCondition {name:'Bearing wear'})
+CREATE (f2:FaultCondition {name:'Lubrication failure'})
+CREATE (m:MaintenanceEvent {id:'M-55', action:'Replaced bearing', date:'2025-03-14'})
+CREATE (m2:MaintenanceEvent {id:'M-61', action:'Re-lubrication and temperature monitoring', date:'2025-06-03'})
+CREATE (tech:Technician {name:'Anna'})
+CREATE (t)-[:LOCATED_AT]->(site)
+CREATE (t8)-[:LOCATED_AT]->(site)
+CREATE (t)-[:HAS_COMPONENT]->(g)
+CREATE (t8)-[:HAS_COMPONENT]->(g8)
+CREATE (a)-[:RAISED_BY]->(t)
+CREATE (a2)-[:RAISED_BY]->(t8)
+CREATE (a)-[:INDICATES_FAULT {confidence:0.85, source:'SensorG07'}]->(f)
+CREATE (a2)-[:INDICATES_FAULT {confidence:0.6, source:'SensorG08'}]->(f2)
+CREATE (a2)-[:INDICATES_FAULT {confidence:0.4, source:'SensorG08'}]->(f)
+CREATE (f)-[:AFFECTS_COMPONENT]->(g)
+CREATE (f2)-[:AFFECTS_COMPONENT]->(g8)
+CREATE (m)-[:PERFORMED_ON]->(g)
+CREATE (m2)-[:PERFORMED_ON]->(g8)
+CREATE (m)-[:ADDRESSES]->(f)
+CREATE (m2)-[:ADDRESSES]->(f2)
+CREATE (tech)-[:PERFORMED]->(m)
+CREATE (tech)-[:PERFORMED]->(m2);

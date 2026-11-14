@@ -1,0 +1,25 @@
+# Secrets
+.env
+!.env.example
+
+# Claude Code local state (contains personal files)
+.claude/
+
+# Build output and caches
+build/
+__pycache__/
+*.pyc
+*.log
+
+# Raw SCADA datasets (large; download per data/*/README.md)
+data/kelmarsh/*.zip
+data/penmanshiel/*.zip
+data/penmanshiel/*.csv
+!data/penmanshiel/Penmanshiel_WT_static.csv
+data/**/extracted/
+
+# Local Ontop CLI distribution (jars; Docker image is used instead)
+cli/
+
+# Third-party paper
+Accelerating_the_Adoption_of_Knowledge_Graphs_for_.pdf

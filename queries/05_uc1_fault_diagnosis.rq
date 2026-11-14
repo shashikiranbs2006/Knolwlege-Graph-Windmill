@@ -1,0 +1,21 @@
+# Use case 1: "Turbine Kelmarsh 2 raised a high gear-bearing temperature alarm.
+# What usually causes it, and what fixed it before?"
+PREFIX wind: <https://w3id.org/wind-core/ontology#>
+
+SELECT ?fault ?confidence ?action ?lastDone ?times ?recordKind WHERE {
+  {
+    SELECT ?fault (MAX(?c) AS ?confidence) WHERE {
+      ?event wind:message ?msg ; wind:indicatesFault ?f .
+      ?diagnosis wind:diagnosedEvent ?event ; wind:diagnosedFault ?f ; wind:confidence ?c .
+      ?f wind:typicalComponent wind:Gearbox ; wind:name ?fault .
+      FILTER (CONTAINS(LCASE(?msg), "high temp. gear bearing"))
+    } GROUP BY ?fault
+  }
+  OPTIONAL {
+    SELECT ?fault ?action (MAX(?start) AS ?lastDone) (COUNT(DISTINCT ?m) AS ?times) (SAMPLE(?kind) AS ?recordKind) WHERE {
+      ?m a wind:MaintenanceEvent ; wind:addresses ?f ; wind:action ?action ; wind:startedAt ?start ; wind:recordKind ?kind .
+      ?f wind:name ?fault .
+    } GROUP BY ?fault ?action
+  }
+}
+ORDER BY DESC(?confidence) DESC(?lastDone)

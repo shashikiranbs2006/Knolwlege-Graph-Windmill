@@ -1,0 +1,18 @@
+# Use case 1 meets use case 2: the Neo4j farm (farm C, exported to RDF into its own named
+# graph) answers the same question as the two Ontop farms, in the same vocabulary.
+# Needs setup with -Neo4j.
+PREFIX wind: <https://w3id.org/wind-core/ontology#>
+
+SELECT ?farm ?fault ?action (COUNT(DISTINCT ?m) AS ?times) (SAMPLE(?kind) AS ?recordKind) WHERE {
+  ?farmIri wind:graph ?g .
+  GRAPH ?g {
+    ?farmNode a wind:WindFarm ; wind:farmId ?farm .
+    ?m a wind:MaintenanceEvent ; wind:addresses ?f ; wind:action ?action ; wind:recordKind ?kind ; wind:performedOn ?c .
+    ?c a wind:Gearbox .
+  }
+  ?f wind:name ?fault .   # fault names come from the shared catalogue in the default graph
+  FILTER (CONTAINS(LCASE(?fault), "bearing"))
+}
+GROUP BY ?farm ?fault ?action
+ORDER BY ?fault ?farm
+LIMIT 50

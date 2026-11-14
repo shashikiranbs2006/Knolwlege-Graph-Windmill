@@ -1,0 +1,73 @@
+[PrefixDeclaration]
+:       https://example.org/wind-v1/
+sosa:   http://www.w3.org/ns/sosa/
+prov:   http://www.w3.org/ns/prov#
+qudt:   http://qudt.org/schema/qudt/
+time:   http://www.w3.org/2006/time#
+xsd:    http://www.w3.org/2001/XMLSchema#
+
+[MappingDeclaration] @collection [[
+mappingId     datasets
+target        :dataset/{dataset_id} a :Dataset ; :recordKind {record_kind} ; :source {source} ; :sourceDate {source_date}^^xsd:date ; :ownedBy {owner} ; :license {license} ; :note {usage_note} .
+source        SELECT * FROM datasets
+
+mappingId     site
+target        :site/Kelmarsh a :WindFarm ; :name "Kelmarsh" .
+source        SELECT turbine_id FROM turbines WHERE turbine_id = 'KWF1'
+
+mappingId     turbines
+target        :turbine/{turbine_id} a :WindTurbine ; :name {title} ; :locatedAt :site/Kelmarsh ; prov:wasDerivedFrom :dataset/{dataset_id} ; :recordKind "observed_source" .
+source        SELECT turbine_id, title, dataset_id FROM turbines
+
+mappingId     streams
+target        :stream/{turbine_id} a :SCADADataStream ; :forTurbine :turbine/{turbine_id} ; prov:wasDerivedFrom :dataset/kelmarsh-2016 .
+source        SELECT turbine_id FROM turbines
+
+mappingId     sensors
+target        :sensor/{turbine_id}/{signal} a :Sensor ; sosa:observes :{signal} .
+source        SELECT turbine_id, signal FROM logical_sensors
+
+mappingId     observations
+target        :observation/{turbine_id}/{row_number}/{signal} a sosa:Observation ; sosa:hasFeatureOfInterest :turbine/{turbine_id} ; sosa:madeBySensor :sensor/{turbine_id}/{signal} ; sosa:observedProperty :{signal} ; sosa:resultTime {observed_at}^^xsd:dateTime ; sosa:hasSimpleResult {value}^^xsd:double ; :unit <http://qudt.org/vocab/unit/{unit_code}> ; :fromStream :stream/{turbine_id} ; :signal {signal} ; :sourceFile {source_file} ; :sourceRow {row_number}^^xsd:integer ; :recordKind "observed_source" ; prov:wasDerivedFrom :dataset/{dataset_id} .
+source        SELECT source_file, row_number, turbine_id, observed_at, signal, unit_code, value, dataset_id FROM measurement_observations
+
+mappingId     performance
+target        :observation/{turbine_id}/{row_number}/{signal} a :PerformanceMetric .
+source        SELECT turbine_id, row_number, signal FROM measurement_observations WHERE signal IN ('Power', 'EnergyExport')
+
+mappingId     environment
+target        :observation/{turbine_id}/{row_number}/{signal} a :EnvironmentalCondition .
+source        SELECT turbine_id, row_number, signal FROM measurement_observations WHERE signal = 'WindSpeed'
+
+mappingId     events
+target        :event/{turbine_id}/{row_number} a :OperationalEvent ; sosa:hasFeatureOfInterest :turbine/{turbine_id} ; :startedAt {started_at}^^xsd:dateTime ; :endedAt {ended_at}^^xsd:dateTime ; :message {message} ; :code {code} ; :sourceFile {source_file} ; :sourceRow {row_number}^^xsd:integer ; :recordKind "observed_source" ; prov:wasDerivedFrom :dataset/{dataset_id} .
+source        SELECT source_file, row_number, turbine_id, started_at, ended_at, message, code, dataset_id FROM status_events
+
+mappingId     event_start_instants
+target        :event/{turbine_id}/{row_number} time:hasBeginning :instant/event/{turbine_id}/{row_number}/start . :instant/event/{turbine_id}/{row_number}/start a time:Instant ; time:inXSDDateTimeStamp {started_at}^^xsd:dateTimeStamp .
+source        SELECT turbine_id, row_number, started_at FROM status_events
+
+mappingId     synthetic_components
+target        :component/{turbine_id}/{proposed_component} a :{proposed_component} ; :name {proposed_component} ; :recordKind "synthetic_demo" ; prov:wasDerivedFrom :dataset/{dataset_id} . :turbine/{turbine_id} :hasComponent :component/{turbine_id}/{proposed_component} .
+source        SELECT turbine_id, proposed_component, dataset_id FROM synthetic_maintenance
+
+mappingId     synthetic_faults
+target        :fault/{case_id} a :FaultCondition ; :name {proposed_fault} ; :recordKind {record_kind} ; :confidence {relation_confidence}^^xsd:decimal ; :evidenceNote {evidence_note} ; :affectsComponent :component/{turbine_id}/{proposed_component} ; prov:wasDerivedFrom :dataset/{dataset_id} . :event/{turbine_id}/{source_status_row} :indicatesFault :fault/{case_id} .
+source        SELECT case_id, turbine_id, source_status_row, proposed_fault, proposed_component, record_kind, relation_confidence, evidence_note, dataset_id FROM synthetic_maintenance
+
+mappingId     synthetic_maintenance
+target        :maintenance/{case_id} a :MaintenanceEvent ; :startedAt {maintenance_start}^^xsd:dateTime ; :endedAt {maintenance_end}^^xsd:dateTime ; :action {action} ; :recordKind {record_kind} ; :performedOn :component/{turbine_id}/{proposed_component} ; :reportedBy :technician/{case_id} ; :hasLog :log/{case_id} ; prov:wasDerivedFrom :dataset/{dataset_id} .
+source        SELECT case_id, turbine_id, proposed_component, maintenance_start, maintenance_end, action, record_kind, dataset_id FROM synthetic_maintenance
+
+mappingId     synthetic_technicians
+target        :technician/{case_id} a :Technician ; :name {technician} ; :recordKind "synthetic_demo" .
+source        SELECT case_id, technician FROM synthetic_maintenance
+
+mappingId     synthetic_logs
+target        :log/{case_id} a :MaintenanceLog ; :note {maintenance_log} ; :recordKind "synthetic_demo" .
+source        SELECT case_id, maintenance_log FROM synthetic_maintenance
+
+mappingId     synthetic_parts
+target        :part/{case_id} a :ReplacementPart ; :name {replacement_part} ; :recordKind "synthetic_demo" . :maintenance/{case_id} :usesPart :part/{case_id} .
+source        SELECT case_id, replacement_part FROM synthetic_maintenance WHERE replacement_part IS NOT NULL
+]]

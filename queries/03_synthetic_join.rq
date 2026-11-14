@@ -1,0 +1,26 @@
+# Real readings during a real alarm, the curated diagnosis for that alarm,
+# and the synthetic maintenance it triggered. Every record carries its source dataset.
+PREFIX wind: <https://w3id.org/wind-core/ontology#>
+PREFIX sosa: <http://www.w3.org/ns/sosa/>
+PREFIX prov: <http://www.w3.org/ns/prov#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?turbineName ?observedAt ?power ?sourceFile ?sourceRow ?eventMessage ?eventFile ?eventRow ?faultName ?confidence ?evidenceNote ?action ?recordKind ?realSource ?demoSource WHERE {
+  VALUES ?event { <https://w3id.org/wind-core/data/farm/kelmarsh/turbine/KWF2/event/72> }
+  ?observation sosa:hasFeatureOfInterest ?turbine ;
+    sosa:observedProperty wind:Power ; sosa:resultTime ?observedAt ;
+    sosa:hasSimpleResult ?power ; wind:sourceFile ?sourceFile ; wind:sourceRow ?sourceRow ;
+    prov:wasDerivedFrom ?realDataset .
+  ?realDataset wind:source ?realSource .
+  ?turbine wind:name ?turbineName .
+  ?event wind:aboutTurbine ?turbine ; wind:message ?eventMessage ; wind:sourceFile ?eventFile ; wind:sourceRow ?eventRow ;
+    wind:startedAt ?eventStart ; wind:endedAt ?eventEnd .
+  ?diagnosis wind:diagnosedEvent ?event ; wind:diagnosedFault ?fault ; wind:confidence ?confidence ; wind:evidenceNote ?evidenceNote .
+  ?fault wind:name ?faultName .
+  ?maintenance wind:triggeredBy ?event ; wind:addresses ?fault ; wind:action ?action ; wind:recordKind ?recordKind ;
+    prov:wasDerivedFrom ?demoDataset .
+  ?demoDataset wind:source ?demoSource .
+  FILTER (?observedAt >= "2016-01-29T12:00:00Z"^^xsd:dateTime && ?observedAt < "2016-01-29T13:00:00Z"^^xsd:dateTime && ?observedAt >= ?eventStart && ?observedAt < ?eventEnd)
+}
+ORDER BY ?observedAt
+LIMIT 5
