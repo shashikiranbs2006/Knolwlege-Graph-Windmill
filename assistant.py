@@ -1,13 +1,14 @@
 """One assistant for both use cases: plain-English question -> SPARQL on the hub -> grounded reply.
 
 Every question goes to the hub (Apache Jena Fuseki), which holds one named graph per farm plus
-the shared curated knowledge. The tab decides the scope:
+the shared curated knowledge. The scope is detected from the question's wording (detect_scope),
+unless the user picks it:
 
     scope "farm"   use case 1: only farm A's named graph (plus the shared curated knowledge)
     scope "cross"  use case 2: every farm graph, joined through the hub's farm registry
 
-If the hub cannot be reached, the farm-A tab falls back to farm A's own Ontop endpoint
-("answered at the farm"), so each tab fails on its own.
+If the hub cannot be reached, farm-A questions fall back to farm A's own Ontop endpoint
+("answered at the farm"), so each kind of question fails on its own.
 
 Works with any OpenAI-compatible chat API (Gemini by default; Groq: LLM_BASE_URL=https://api.groq.com/openai/v1).
 Environment:
@@ -46,6 +47,28 @@ SCOPES = {
     "cross": {"endpoint": lambda: HUB, "examples": "hub_0[123]_*.rq", "where": "the hub, all farm graphs"},
     "farm-direct": {"endpoint": lambda: FARM_A, "examples": "0[1235]_*.rq", "where": "farm A's own Ontop endpoint"},
 }
+
+
+# Scope detection from the question's wording. Anything naming another farm, several farms or a
+# comparison between farms is use case 2 ("cross"); everything else is about farm A ("farm").
+OTHER_FARMS = re.compile(r"\b(penmanshiel|farm\s*[bc]|farm-c|neo4j\s+farm)\b", re.I)
+CROSS_WORDS = re.compile(
+    r"\b(both|all|each|every|across|between|other|per|three|two)\s+(of\s+the\s+)?(wind\s*)?farms?\b"
+    r"|\bfarms\b|\bcross[- ]farm\b|\bwhich\s+farm\b", re.I)
+FARM_A_WORDS = re.compile(r"\b(kelmarsh(\s+\d+)?|farm\s*a|this\s+farm|our\s+farm)\b", re.I)
+
+
+def detect_scope(question):
+    """Return (scope, reason) for a question: "cross" if it mentions another farm or several farms,
+    otherwise "farm" (farm A, Kelmarsh). The reason quotes the words that decided it."""
+    for pattern in (OTHER_FARMS, CROSS_WORDS):
+        found = pattern.search(question)
+        if found:
+            return "cross", f'the question mentions "{found.group(0)}"'
+    found = FARM_A_WORDS.search(question)
+    if found:
+        return "farm", f'the question mentions "{found.group(0)}"'
+    return "farm", "no other farm is mentioned, so it is about farm A (Kelmarsh)"
 
 
 class Unavailable(Exception):
@@ -143,7 +166,7 @@ def check(sparql, scope="farm"):
     graphs = re.findall(r"\bGRAPH\s+(<[^>]*>|\?\w+|\$\w+|\w*:\w*)", re.sub(r'"(?:[^"\\]|\\.)*"', '""', sparql), re.I)
     if scope == "farm":
         if not graphs or any(graph != f"<{FARM_A_GRAPH}>" for graph in graphs):
-            raise ValueError(f"On the farm A tab, every farm pattern must be inside GRAPH <{FARM_A_GRAPH}> and no other graph may be used.")
+            raise ValueError(f"For a farm A question, every farm pattern must be inside GRAPH <{FARM_A_GRAPH}> and no other graph may be used.")
     elif scope == "cross":
         if not graphs:
             raise ValueError("Cross-farm questions must read the farm graphs with GRAPH ?g (bound from ?farmIri wind:graph ?g).")
@@ -233,12 +256,22 @@ def generate(question, scope, attempts):
     raise ValueError("I could not produce a working query: " + (trail[-1]["error"] if trail else "no reply"))
 
 
-def ask(question, scope="farm", attempts=3):
+def ask(question, scope="auto", attempts=3):
+    """Answer a question. scope "auto" detects it from the wording; "farm" or "cross" is the
+    user's explicit choice. A farm-scoped question that names another farm is refused, and every
+    generated farm-scoped query is checked to stay inside farm A's graph."""
     question = question.strip()
-    if scope not in ("farm", "cross"):
-        raise ValueError("Unknown tab.")
+    if scope not in ("auto", "farm", "cross"):
+        raise ValueError("Unknown scope: use auto, farm or cross.")
     if not question or len(question) > 1000:
         raise ValueError("Ask a question of up to 1,000 characters.")
+    detected, reason = detect_scope(question)
+    chosen_by = "you chose it"
+    if scope == "auto":
+        scope, chosen_by = detected, "detected: " + reason
+    elif scope == "farm" and OTHER_FARMS.search(question):
+        raise ValueError(f'This question names another farm ("{OTHER_FARMS.search(question).group(0)}"), but the scope is "This farm", '
+                         "which may only read farm A's data. Switch the scope to All farms (or Auto) to compare farms.")
     via, notice = scope, ""
     try:
         sparql, columns, rows, trail, endpoint = generate(question, scope, attempts)
@@ -251,7 +284,7 @@ def ask(question, scope="farm", attempts=3):
             sparql, columns, rows, trail, endpoint = generate(question, via, attempts)
         except Unavailable as farm_error:
             raise RuntimeError(f"Neither the hub nor farm A's own endpoint is reachable: {farm_error}") from farm_error
-    return {"question": question, "scope": scope, "via": via, "where": SCOPES[via]["where"], "notice": notice,
+    return {"question": question, "scope": scope, "scope_reason": chosen_by, "via": via, "where": SCOPES[via]["where"], "notice": notice,
             "sparql": sparql, "farm_sparql": sparql if via == "farm-direct" else (at_the_farm(sparql) if scope == "farm" else None),
             "columns": columns, "rows": rows, "answer": answer_text(question, sparql, columns, rows, scope),
             "attempts": trail, "model": MODEL, "endpoint": endpoint}
@@ -260,8 +293,6 @@ def ask(question, scope="farm", attempts=3):
 if __name__ == "__main__":
     import sys
     args = sys.argv[1:]
-    tab = "cross" if args[:1] == ["--cross"] else "farm"
-    args = args[1:] if args[:1] == ["--cross"] else args
-    default = {"farm": "What usually causes high gear bearing temperature on a gearbox, and what fixed it last time?",
-               "cross": "For gearbox faults, how did each farm fix them and how often?"}[tab]
-    print(json.dumps(ask(" ".join(args) or default, tab), indent=2))
+    scope = {"--cross": "cross", "--farm": "farm"}.get(args[0], "auto") if args else "auto"
+    args = args[1:] if scope != "auto" else args
+    print(json.dumps(ask(" ".join(args) or "What usually causes high gear bearing temperature on a gearbox, and what fixed it last time?", scope), indent=2))

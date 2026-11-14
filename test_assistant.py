@@ -2,9 +2,9 @@
 
 Needs the hub (127.0.0.1:3030) and farm A's Ontop endpoint (127.0.0.1:8080) running.
     uv run --offline python test_assistant.py
-Checks: prompt grounding per tab, retry after a failed query, farm A tab answers on farm A's
-hub graph, all-farms tab answers across graphs, farm A tab falls back to the farm when the hub
-is down, the all-farms tab fails on its own, synthetic labels, and unsafe or out-of-scope queries.
+Checks: prompt grounding per scope, retry after a failed query, farm A tab answers on farm A's
+hub graph, cross-farm questions answer across graphs, farm A questions fall back to the farm when the hub
+is down, cross-farm questions fail on their own, scope auto-detection, a farm-scoped question naming another farm is refused, synthetic labels, and unsafe or out-of-scope queries.
 """
 
 import json
@@ -43,7 +43,7 @@ import assistant  # noqa: E402  (reads the environment at import)
 
 QUESTION = "What usually causes high gear bearing temperature on a gearbox, and what fixed it last time?"
 
-# 1. Farm A tab: a broken query, then the hub query on farm A's graph.
+# 1. Farm A question: a broken query, then the hub query on farm A's graph.
 script[:] = ["```sparql\nSELECT ?x WHERE { GRAPH <%s> { ?x wind:noSuchPrefixDeclared ?y } } LIMIT 5\n```" % assistant.FARM_A_GRAPH,
              "```sparql\n" + HUB_UC1 + "\n```", REPLY]
 result = assistant.ask(QUESTION, "farm")
@@ -57,18 +57,18 @@ assert "synthetic" in result["answer"]
 assert result["farm_sparql"] and "GRAPH" not in result["farm_sparql"], "no at-the-farm equivalent"
 farm_columns, farm_rows = assistant.run_sparql(result["farm_sparql"], assistant.FARM_A)
 assert farm_rows == result["rows"], "farm A's hub graph and farm A's own Ontop endpoint disagree"
-print("farm A tab: answered on farm A's hub graph; same rows as farm A's own Ontop endpoint")
+print("farm A question: answered on farm A's hub graph; same rows as farm A's own Ontop endpoint")
 
-# 2. All-farms tab: same assistant, cross-farm prompt and query.
+# 2. Cross-farm question: same assistant, cross-farm prompt and query.
 seen.clear()
 script[:] = ["```sparql\n" + HUB_UC2 + "\n```", "Each farm fixed gearbox faults differently; these are synthetic demo work orders."]
 result = assistant.ask("For gearbox faults, how did each farm fix them and how often?", "cross")
 assert "GRAPH ?g" in seen[0][1]["messages"][0]["content"] and "How did each farm fix them" in seen[0][1]["messages"][0]["content"]
 assert result["via"] == "cross" and {row["farm"] for row in result["rows"]} >= {"kelmarsh"}
 assert all(row["recordKind"] == "synthetic_demo" for row in result["rows"]) and result["farm_sparql"] is None
-print(f"all-farms tab: answered across farm graphs {sorted({row['farm'] for row in result['rows']})}")
+print(f"cross-farm question: answered across farm graphs {sorted({row['farm'] for row in result['rows']})}")
 
-# 3. The hub is down: the farm A tab answers at the farm; the all-farms tab fails on its own.
+# 3. The hub is down: farm A questions answer at the farm; cross-farm questions fail on their own.
 assistant.HUB = "http://127.0.0.1:9/hub/sparql"
 seen.clear()
 script[:] = ["```sparql\n" + HUB_UC1 + "\n```", "```sparql\n" + FARM_UC1 + "\n```", REPLY]
@@ -81,11 +81,30 @@ try:
     raise AssertionError("cross tab answered without a hub")
 except RuntimeError as error:
     assert "hub is unavailable" in str(error)
-print("hub down: farm A tab answered at the farm; all-farms tab reported the hub as unavailable")
+print("hub down: farm A question answered at the farm; cross-farm question reported the hub as unavailable")
 
 # 4. The LLM is told the answer must mention synthetic data, and the reply is patched if it does not.
 script[:] = ["The last fix was re-lubrication."]
 assert "synthetic demo data" in assistant.answer_text("q", "s", ["recordKind"], [{"recordKind": "synthetic_demo"}], "farm")
+
+# 4b. Scope auto-detection, and the safety rule for a farm-scoped question that names another farm.
+for q, want in (("Kelmarsh 2 raised a high gear bearing temperature alarm. What usually causes it?", "farm"),
+                (QUESTION, "farm"), ("For gearbox faults, how did both farms fix them?", "cross"),
+                ("What does each farm publish and withhold?", "cross"), ("How does Penmanshiel fix bearing faults?", "cross")):
+    assert assistant.detect_scope(q)[0] == want, (q, assistant.detect_scope(q))
+seen.clear()
+try:
+    assistant.ask("How does Penmanshiel fix bearing faults?", "farm")
+    raise AssertionError("a farm-scoped question naming another farm was answered")
+except ValueError as error:
+    assert "another farm" in str(error) and not seen, "refusal must happen before any LLM call"
+script[:] = ["```sparql\n" + HUB_UC1 + "\n```", REPLY]
+assistant.HUB = "http://127.0.0.1:3030/hub/sparql"
+auto = assistant.ask(QUESTION)  # scope defaults to auto
+assert auto["scope"] == "farm" and auto["scope_reason"].startswith("detected")
+script[:] = ["```sparql\n" + HUB_UC2 + "\n```", "Each farm fixed gearbox faults differently; these are synthetic demo work orders."]
+assert assistant.ask("For gearbox faults, how did both farms fix them?")["scope"] == "cross"
+print("scope auto-detected; a farm-scoped question naming another farm is refused before the LLM is called")
 
 # 5. Unsafe or out-of-scope queries are refused.
 farm_b = "SELECT * WHERE { GRAPH <https://w3id.org/wind-core/data/graph/penmanshiel> { ?s ?p ?o } } LIMIT 5"
@@ -96,8 +115,8 @@ for bad, scope in (("DELETE WHERE { ?s ?p ?o }", "farm"), ("SELECT * WHERE { SER
                    ("SELECT * WHERE { ?s ?p ?o } LIMIT 5", "cross")):
     try:
         assistant.check(bad, scope)
-        raise AssertionError(f"accepted unsafe or out-of-scope query on the {scope} tab: {bad}")
+        raise AssertionError(f"accepted unsafe or out-of-scope query for scope {scope}: {bad}")
     except ValueError:
         pass
 assistant.check("SELECT ?add WHERE { GRAPH ?g { ?m <https://w3id.org/wind-core/ontology#addresses> ?add } } LIMIT 5", "cross")
-print("Assistant passed: grounding per tab, retry, hub answers equal the farm, fallback, independent failure, unsafe queries refused.")
+print("Assistant passed: grounding per scope, scope detection, retry, hub answers equal the farm, fallback, independent failure, unsafe queries refused.")

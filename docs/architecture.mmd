@@ -1,9 +1,12 @@
 flowchart TB
   USER(("Engineer"))
   subgraph SITE["One site · http://127.0.0.1:8081/"]
-    T1["Tab 1 · Farm A (Kelmarsh): fault diagnosis<br/>use case 1 · scope GRAPH &lt;graph/kelmarsh&gt;"]
-    T2["Tab 2 · All farms: cross-farm learning<br/>use case 2 · scope GRAPH ?g over the registry"]
-    LLM["One assistant (assistant.py)<br/>LLM writes SPARQL · SELECT-only · LIMIT ≤ 50<br/>scope checked per tab · answers only from rows<br/>always labels synthetic_demo / curated_demo"]
+    Q["One question box<br/>scope chip: Auto · This farm · All farms<br/>Auto reads the wording (Kelmarsh 2 → farm A, both farms → all)"]
+    T1["This farm · use case 1<br/>scope GRAPH &lt;graph/kelmarsh&gt;"]
+    T2["All farms · use case 2<br/>scope GRAPH ?g over the registry"]
+    Q --> T1
+    Q --> T2
+    LLM["One assistant (assistant.py)<br/>LLM writes SPARQL · SELECT-only · LIMIT ≤ 50<br/>scope checked per query; farm scope refuses other farms · answers only from rows<br/>always labels synthetic_demo / curated_demo"]
     T1 --> LLM
     T2 --> LLM
   end
@@ -29,7 +32,7 @@ flowchart TB
   end
   USER --> SITE
   LLM -- "SPARQL" --> HUB
-  LLM -. "fallback if the hub is down<br/>(tab 1 only, at the farm)" .-> OA
+  LLM -. "fallback if the hub is down<br/>(farm A questions only, at the farm)" .-> OA
   T1 -. "at-the-farm panel:<br/>SPARQL → mapping → SQL journey" .-> OA
   OA -- "harvest (assets, events,<br/>diagnoses, maintenance)" --> BUILD
   OB -- "harvest" --> BUILD

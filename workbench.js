@@ -218,27 +218,6 @@ nextButton?.addEventListener("click", () => {
   paint();
 });
 
-// ---------- Tabs: farm A (use case 1) and all farms (use case 2) ----------
-const tabs = [...document.querySelectorAll('[role="tab"]')];
-function selectTab(name, focus = false) {
-  for (const tab of tabs) {
-    const on = tab.dataset.tab === name;
-    tab.setAttribute("aria-selected", on);
-    tab.tabIndex = on ? 0 : -1;
-    document.getElementById(tab.getAttribute("aria-controls")).hidden = !on;
-    if (on && focus) tab.focus();
-  }
-  try { history.replaceState(null, "", name === "cross" ? "#all-farms" : "#farm-a"); } catch {}
-}
-tabs.forEach((tab, i) => {
-  tab.addEventListener("click", () => selectTab(tab.dataset.tab));
-  tab.addEventListener("keydown", event => {
-    const step = {ArrowRight: 1, ArrowLeft: -1}[event.key];
-    if (step) selectTab(tabs[(i + step + tabs.length) % tabs.length].dataset.tab, true);
-  });
-});
-selectTab(location.hash === "#all-farms" ? "cross" : "farm");
-
 function table(columns, rows, parent) {
   const wrap = add("div", "", parent);
   wrap.className = "scroll";
@@ -253,7 +232,7 @@ function table(columns, rows, parent) {
   return wrap;
 }
 
-// ---------- Service status, checked per tab so one service being down only affects its tab ----------
+// ---------- Service status, one line per kind of question so one service being down only affects its own ----------
 async function checkServices() {
   const farmLine = document.querySelector('[data-status="farm"]');
   const crossLine = document.querySelector('[data-status="cross"]');
@@ -265,82 +244,85 @@ async function checkServices() {
     for (const line of [farmLine, crossLine]) { line.textContent = "The site could not check its services."; line.className = "service down"; }
     return;
   }
-  const farm = data.tabs.farm;
+  const farm = data.scopes.farm;
   if (farm.via === "hub") {
-    farmLine.textContent = `Hub online with farm A's graph${data.farmA.ok ? "; farm A's own Ontop endpoint is online too" : "; farm A's own endpoint is offline, so the at-the-farm panel will not answer"}.`;
+    farmLine.textContent = `This farm (farm A): hub online with farm A's graph${data.farmA.ok ? "; farm A's own Ontop endpoint is online too" : "; farm A's own endpoint is offline, so the at-the-farm panel will not answer"}.`;
     farmLine.className = data.farmA.ok ? "service ok" : "service degraded";
   } else if (farm.via === "farm") {
-    farmLine.textContent = "The hub is unavailable. Questions on this tab will be answered at the farm, on farm A's own Ontop endpoint.";
+    farmLine.textContent = "This farm (farm A): the hub is unavailable, so questions will be answered at the farm, on farm A's own Ontop endpoint.";
     farmLine.className = "service degraded";
   } else {
-    farmLine.textContent = "Neither the hub nor farm A's own endpoint is reachable, so this tab cannot answer right now.";
+    farmLine.textContent = "This farm (farm A): neither the hub nor farm A's own endpoint is reachable, so these questions cannot be answered right now.";
     farmLine.className = "service down";
   }
   const graphs = data.hub.graphs || [];
   const box = document.querySelector("#farm-graphs");
   box.replaceChildren();
-  if (data.tabs.cross.ok) {
-    crossLine.textContent = `Hub online with ${graphs.length} farm graph(s).`;
+  if (data.scopes.cross.ok) {
+    crossLine.textContent = `All farms: hub online with ${graphs.length} farm graph(s).`;
     crossLine.className = "service ok";
-    add("p", "Farm graphs in the hub (each harvested from the farm's own endpoint and SHACL-validated before loading):", box).className = "hint";
+    add("p", "Each graph is harvested from the farm's own endpoint and SHACL-validated before loading:", box).className = "hint";
     table(["farm", "name", "graph", "harvestedAt", "triples"], graphs, box);
   } else {
-    crossLine.textContent = data.hub.ok ? "The hub is online but holds no farm graph yet. Run the hub build." : "The hub is unavailable, so cross-farm questions cannot be answered right now. The farm A tab still works at the farm.";
+    crossLine.textContent = data.hub.ok ? "All farms: the hub is online but holds no farm graph yet. Run the hub build." : "All farms: the hub is unavailable, so cross-farm questions cannot be answered right now. Farm A questions still work at the farm.";
     crossLine.className = "service down";
   }
 }
 checkServices();
 
-// ---------- One assistant, scoped by tab ----------
-for (const askForm of document.querySelectorAll(".ask-form")) {
-  const askResult = askForm.nextElementSibling;
-  const scope = askForm.dataset.scope;
-  askForm.querySelectorAll(".example").forEach(example => example.addEventListener("click", () => {
-    askForm.question.value = example.textContent;
-    askForm.requestSubmit();
-  }));
-  askForm.addEventListener("submit", async event => {
-    event.preventDefault();
-    const question = askForm.question.value.trim() || askForm.question.placeholder;
-    const button = askForm.querySelector('button[type="submit"]');
-    button.disabled = true;
+// ---------- One question box; scope is auto-detected unless a chip is chosen ----------
+const askForm = document.querySelector("#ask-form");
+const askResult = document.querySelector("#ask-result");
+const scopeNames = {farm: "This farm (farm A, Kelmarsh)", cross: "All farms"};
+askForm.querySelectorAll(".example").forEach(example => example.addEventListener("click", () => {
+  askForm.question.value = example.textContent;
+  askForm.scope.value = "auto";
+  askForm.requestSubmit();
+}));
+askForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const question = askForm.question.value.trim() || askForm.question.placeholder;
+  const scope = askForm.scope.value;
+  const button = askForm.querySelector('button[type="submit"]');
+  button.disabled = true;
+  askResult.replaceChildren();
+  add("p", "Detecting the scope, writing a SPARQL query for the hub and running it…", askResult);
+  try {
+    const response = await fetch("/ask", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: new URLSearchParams({question, scope})});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
     askResult.replaceChildren();
-    add("p", scope === "cross" ? "Writing a SPARQL query over every farm graph in the hub and running it…" : "Writing a SPARQL query over farm A's graph in the hub and running it…", askResult);
-    try {
-      const response = await fetch("/ask", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: new URLSearchParams({question, scope})});
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
-      askResult.replaceChildren();
-      if (data.notice) add("p", data.notice, askResult).className = "warning";
-      add("p", data.answer, askResult).className = "reply";
-      const kinds = new Set(data.rows.map(row => row.recordKind).filter(Boolean));
-      if (kinds.has("synthetic_demo")) add("p", "synthetic_demo: maintenance and repair records in this answer are fabricated for the demo, not real repairs.", askResult).className = "warning";
-      if (kinds.has("curated_demo")) add("p", "curated_demo: fault links and confidences come from illustrative demo rules, not validated diagnoses.", askResult).className = "warning";
-      add("p", `Answered on ${data.where} · model ${data.model} · ${data.rows.length} row(s) from ${data.endpoint}` + (data.attempts.length ? ` · ${data.attempts.length} query attempt(s) corrected automatically` : ""), askResult).className = "hint";
-      const details = add("details", "", askResult);
-      add("summary", "Generated SPARQL and result rows", details);
-      add("pre", data.sparql, details);
-      if (data.columns.length) table(data.columns, data.rows, details);
-      if (data.farm_sparql && form) {
-        const show = add("button", "Show how farm A's own Ontop endpoint answers this, at the farm", askResult);
-        show.type = "button";
-        show.addEventListener("click", () => {
-          document.querySelector("#at-the-farm").open = true;
-          queryBox.value = data.farm_sparql;
-          form.requestSubmit();
-          journey.scrollIntoView({behavior: "smooth"});
-        });
-      }
-    } catch (error) {
-      askResult.replaceChildren();
-      add("p", error.message, askResult).className = "error";
-    } finally {
-      button.disabled = false;
+    const chip = add("p", `Scope: ${scopeNames[data.scope]} · ${data.scope_reason}`, askResult);
+    chip.className = "hint";
+    if (data.notice) add("p", data.notice, askResult).className = "warning";
+    add("p", data.answer, askResult).className = "reply";
+    const kinds = new Set(data.rows.map(row => row.recordKind).filter(Boolean));
+    if (kinds.has("synthetic_demo")) add("p", "synthetic_demo: maintenance and repair records in this answer are fabricated for the demo, not real repairs.", askResult).className = "warning";
+    if (kinds.has("curated_demo")) add("p", "curated_demo: fault links and confidences come from illustrative demo rules, not validated diagnoses.", askResult).className = "warning";
+    add("p", `Answered on ${data.where} · model ${data.model} · ${data.rows.length} row(s) from ${data.endpoint}` + (data.attempts.length ? ` · ${data.attempts.length} query attempt(s) corrected automatically` : ""), askResult).className = "hint";
+    const details = add("details", "", askResult);
+    add("summary", "Generated SPARQL and result rows", details);
+    add("pre", data.sparql, details);
+    if (data.columns.length) table(data.columns, data.rows, details);
+    if (data.farm_sparql && form) {
+      const show = add("button", "Show how farm A's own Ontop endpoint answers this, at the farm", askResult);
+      show.type = "button";
+      show.addEventListener("click", () => {
+        document.querySelector("#at-the-farm").open = true;
+        queryBox.value = data.farm_sparql;
+        form.requestSubmit();
+        journey.scrollIntoView({behavior: "smooth"});
+      });
     }
-  });
-}
+  } catch (error) {
+    askResult.replaceChildren();
+    add("p", error.message, askResult).className = "error";
+  } finally {
+    button.disabled = false;
+  }
+});
 
-// ---------- Raw SPARQL on the hub (all-farms tab) ----------
+// ---------- Raw SPARQL on the hub (hub panel) ----------
 const hubForm = document.querySelector("#hub-form");
 hubForm?.addEventListener("submit", async event => {
   event.preventDefault();

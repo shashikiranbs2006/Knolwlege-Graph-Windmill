@@ -1,4 +1,4 @@
-"""Integration check for the running site: both tabs, per-tab status, the hub, and farm A's at-the-farm journey."""
+"""Integration check for the running site: the single question box, per-scope status, the hub, and farm A's at-the-farm journey."""
 
 import csv
 import json
@@ -70,14 +70,17 @@ assert status == 400 and json.loads(content)["error"]
 
 with urllib.request.urlopen("http://127.0.0.1:8081/", timeout=30) as response:
     page = response.read().decode()
-assert 'id="tab-farm"' in page and 'id="tab-cross"' in page and "Data stays at the farm." in page and "The hub is shared." in page
+assert 'id="ask-form"' in page and 'value="auto"' in page and 'value="farm"' in page and 'value="cross"' in page
+assert 'role="tab"' not in page and page.count('id="question"') == 1, "the tabs should be gone"
+assert "Data stays at the farm." in page and "Only the validated hub is shared." in page and "The hub is shared." in page
+assert "Fault diagnosis (use case 1" in page and "Cross-farm learning (use case 2" in page
 with urllib.request.urlopen("http://127.0.0.1:8081/status", timeout=30) as response:
     health = json.load(response)
-assert health["tabs"]["farm"] == {"ok": True, "via": "hub"} and health["tabs"]["cross"]["ok"], health
+assert health["scopes"]["farm"] == {"ok": True, "via": "hub"} and health["scopes"]["cross"]["ok"], health
 assert "https://w3id.org/wind-core/data/graph/kelmarsh" in {g["graph"] for g in health["hub"]["graphs"]}
 status, content = run(Path("queries/hub_01_cross_farm_fixes.rq").read_text(encoding="utf-8"), "/hub-answer")
 hub = json.loads(content)
 assert status == 200 and {row["farm"] for row in hub["rows"]} >= {"kelmarsh"} and all(r["recordKind"] == "synthetic_demo" for r in hub["rows"])
 status, content = run("DELETE WHERE { ?s ?p ?o }", "/hub-answer")
 assert status == 400
-print("Site passed: two tabs, per-tab status, hub queries, farm A journey (live paths, source ZIP row, changed and empty results, synthetic warning, invalid query).")
+print("Site passed: one question box, per-scope status, hub queries, farm A journey (live paths, source ZIP row, changed and empty results, synthetic warning, invalid query).")

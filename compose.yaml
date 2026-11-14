@@ -44,8 +44,8 @@ services:
       - "127.0.0.1:3030:3030"
     volumes:
       - ./build/hub:/data:ro
-  # The one site: two tabs, one assistant, questions answered on the hub.
-  # No depends_on: the site starts even if a service is down, and each tab reports its own status.
+  # The one site: one question box, one assistant, questions answered on the hub.
+  # No depends_on: the site starts even if a service is down, and each scope reports its own status.
   site:
     image: python:3.14-alpine
     command: ["python", "/app/query_workbench.py"]
