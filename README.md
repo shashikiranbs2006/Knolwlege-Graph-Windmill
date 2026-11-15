@@ -149,7 +149,7 @@ docker compose restart hub
 
 Prerequisites: Docker Desktop running, `uv` with Python 3, the pgJDBC JAR at `cli/jdbc/postgresql-42.7.14.jar`, the Kelmarsh files in `data/kelmarsh/`. Optional: the Penmanshiel files in `data/penmanshiel/` (see its README; do not unzip), and an LLM key.
 
-1. Copy `.env.example` to `.env` and set `LLM_API_KEY=...` (free key from aistudio.google.com). For Groq, also set `LLM_BASE_URL=https://api.groq.com/openai/v1` and a Groq `LLM_MODEL`. `.env` is git-ignored. The free tiers are rate limited; the assistant waits and retries on HTTP 429.
+1. Copy `.env.example` to `.env` and set `LLM_API_KEY=...` (free key from aistudio.google.com). For Groq, also set `LLM_BASE_URL=https://api.groq.com/openai/v1` and a Groq `LLM_MODEL`. `.env` is git-ignored. The free tiers are rate limited, so you can add backups: `LLM_API_KEYS=key2,key3` (comma separated, used together with `LLM_API_KEY`). On a 429, overload, 5xx or timeout the assistant moves to the next key, backs off briefly, and shows a clear message if every key fails. Each question has a 100 s limit (`ASK_BUDGET_SECONDS`). Keys stay in `.env` and are never logged or echoed.
 2. From PowerShell in this folder: `.\setup.ps1` (add `-Neo4j` to include farm C). On Linux/macOS: `./setup.sh [--neo4j]`.
 
 Setup rebuilds **only** the demo tables in the two demo databases; the source files are never modified. Order: farm databases → farm Ontop endpoints → hub build (harvest + SHACL) → hub + site. Farm B starts automatically when the Penmanshiel files are present. Stop with `docker compose --profile uc2 --profile neo4j stop`. `down -v` deletes the imported databases.

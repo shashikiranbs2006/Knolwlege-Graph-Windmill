@@ -119,4 +119,46 @@ for bad, scope in (("DELETE WHERE { ?s ?p ?o }", "farm"), ("SELECT * WHERE { SER
     except ValueError:
         pass
 assistant.check("SELECT ?add WHERE { GRAPH ?g { ?m <https://w3id.org/wind-core/ontology#addresses> ?add } } LIMIT 5", "cross")
-print("Assistant passed: grounding per scope, scope detection, retry, hub answers equal the farm, fallback, independent failure, unsafe queries refused.")
+# Key rotation: a 429 on the first key moves to the backup; all keys failing gives one clear message.
+import urllib.error  # noqa: E402
+import io  # noqa: E402
+
+real_urlopen = assistant.urllib.request.urlopen
+used = []
+
+
+class _Resp(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def fake_urlopen(request, timeout=None):
+    key = request.get_header("Authorization").split()[-1]
+    used.append(key)
+    if key in bad_keys:
+        raise urllib.error.HTTPError(request.full_url, 429, "Too Many Requests", {}, io.BytesIO(b"{}"))
+    return _Resp(json.dumps({"choices": [{"message": {"content": "ok-" + key}}]}).encode())
+
+
+os.environ.update(LLM_API_KEY="k-single", LLM_API_KEYS="k-a, k-b")
+assert assistant.api_keys() == ["k-a", "k-b", "k-single"]
+assistant.urllib.request.urlopen = fake_urlopen
+assistant.time.sleep = lambda *_: None
+try:
+    bad_keys = {"k-a"}
+    assert assistant.chat([{"role": "user", "content": "hi"}]) == "ok-k-b" and used == ["k-a", "k-b"]
+    used.clear()
+    assert assistant.chat([{"role": "user", "content": "hi"}]) == "ok-k-b" and used == ["k-b"], "starts on the key that worked"
+    bad_keys = {"k-a", "k-b", "k-single"}
+    try:
+        assistant.chat([{"role": "user", "content": "hi"}])
+        raise AssertionError("expected all keys to fail")
+    except RuntimeError as error:
+        assert "Every configured language-model key failed" in str(error) and "k-a" not in str(error) and "429" in str(error)
+finally:
+    assistant.urllib.request.urlopen = real_urlopen
+    os.environ.update(LLM_API_KEY="test-key", LLM_API_KEYS="")
+print("Assistant passed: grounding per scope, scope detection, retry, hub answers equal the farm, fallback, independent failure, unsafe queries refused, key rotation on 429.")

@@ -59,6 +59,7 @@ services:
       FARM_A_GRAPH: https://w3id.org/wind-core/data/graph/kelmarsh
       ASSISTANT_EXAMPLES: /queries
       LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_API_KEYS: ${LLM_API_KEYS:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
       LLM_MODEL: ${LLM_MODEL:-gemini-flash-latest}
     ports:

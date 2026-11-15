@@ -274,31 +274,52 @@ checkServices();
 const askForm = document.querySelector("#ask-form");
 const askResult = document.querySelector("#ask-result");
 const scopeNames = {farm: "This farm (farm A, Kelmarsh)", cross: "All farms"};
-askForm.querySelectorAll(".example").forEach(example => example.addEventListener("click", () => {
-  askForm.question.value = example.textContent;
+const exampleButtons = [...askForm.querySelectorAll(".example")];
+const ASK_TIMEOUT_MS = 130000;  // a little over the server's own 100 s budget, so the server's clear message wins
+let asking = false;
+exampleButtons.forEach(example => example.addEventListener("click", () => {
+  if (asking) return;
+  askForm.question.value = example.textContent.trim();
   askForm.scope.value = "auto";
   askForm.requestSubmit();
+  askForm.scrollIntoView({behavior: "smooth", block: "start"});
 }));
+
+function showSpinner(started) {
+  const box = add("div", "", askResult);
+  box.className = "spinner";
+  box.append(document.createElement("i"));
+  const text = add("span", "", box);
+  const tick = () => { text.textContent = `Detecting the scope, writing a SPARQL query and running it… ${Math.round((Date.now() - started) / 1000)} s (gives up after about 100 s)`; };
+  tick();
+  return setInterval(tick, 1000);
+}
+
 askForm.addEventListener("submit", async event => {
   event.preventDefault();
+  if (asking) return;
   const question = askForm.question.value.trim() || askForm.question.placeholder;
   const scope = askForm.scope.value;
   const button = askForm.querySelector('button[type="submit"]');
+  asking = true;
   button.disabled = true;
+  exampleButtons.forEach(example => { example.disabled = true; });
   askResult.replaceChildren();
-  add("p", "Detecting the scope, writing a SPARQL query for the hub and running it…", askResult);
+  const timer = showSpinner(Date.now());
+  const controller = new AbortController();
+  const abort = setTimeout(() => controller.abort(), ASK_TIMEOUT_MS);
   try {
-    const response = await fetch("/ask", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: new URLSearchParams({question, scope})});
-    const data = await response.json();
+    const response = await fetch("/ask", {method: "POST", signal: controller.signal, headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: new URLSearchParams({question, scope})});
+    let data;
+    try { data = await response.json(); } catch { throw new Error(`The site answered with an unreadable response (HTTP ${response.status}).`); }
     if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
     askResult.replaceChildren();
-    const chip = add("p", `Scope: ${scopeNames[data.scope]} · ${data.scope_reason}`, askResult);
-    chip.className = "hint";
-    if (data.notice) add("p", data.notice, askResult).className = "warning";
     add("p", data.answer, askResult).className = "reply";
+    if (data.notice) add("p", data.notice, askResult).className = "warning";
     const kinds = new Set(data.rows.map(row => row.recordKind).filter(Boolean));
     if (kinds.has("synthetic_demo")) add("p", "synthetic_demo: maintenance and repair records in this answer are fabricated for the demo, not real repairs.", askResult).className = "warning";
     if (kinds.has("curated_demo")) add("p", "curated_demo: fault links and confidences come from illustrative demo rules, not validated diagnoses.", askResult).className = "warning";
+    add("p", `Scope: ${scopeNames[data.scope]} · ${data.scope_reason}`, askResult).className = "hint";
     add("p", `Answered on ${data.where} · model ${data.model} · ${data.rows.length} row(s) from ${data.endpoint}` + (data.attempts.length ? ` · ${data.attempts.length} query attempt(s) corrected automatically` : ""), askResult).className = "hint";
     const details = add("details", "", askResult);
     add("summary", "Generated SPARQL and result rows", details);
@@ -316,9 +337,14 @@ askForm.addEventListener("submit", async event => {
     }
   } catch (error) {
     askResult.replaceChildren();
-    add("p", error.message, askResult).className = "error";
+    const message = error.name === "AbortError" ? "Timed out: no answer after more than two minutes. The language model or the hub may be overloaded. Try again in a minute." : error.message;
+    add("p", message, askResult).className = "error";
   } finally {
+    clearInterval(timer);
+    clearTimeout(abort);
+    asking = false;
     button.disabled = false;
+    exampleButtons.forEach(example => { example.disabled = false; });
   }
 });
 

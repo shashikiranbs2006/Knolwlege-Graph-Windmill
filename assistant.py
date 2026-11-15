@@ -27,6 +27,7 @@ answer, and the reply is written from the returned rows only.
 import json
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -41,6 +42,9 @@ FARM_A_GRAPH = os.getenv("FARM_A_GRAPH", "https://w3id.org/wind-core/data/graph/
 ONTOLOGY = Path(os.getenv("VKG_ONTOLOGY_FILE", "vkg/ontology.ttl"))
 EXAMPLES = Path(os.getenv("ASSISTANT_EXAMPLES", "queries"))
 MAX_ROWS = 50
+BUDGET = float(os.getenv("ASK_BUDGET_SECONDS", "100"))  # hard limit for one question, so the page never waits forever
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT_SECONDS", "40"))
+_clock = threading.local()
 FORBIDDEN = re.compile(r"\b(INSERT|DELETE|LOAD|CLEAR|DROP|CREATE|COPY|MOVE|ADD|SERVICE|FROM)\b", re.I)
 SCOPES = {
     "farm": {"endpoint": lambda: HUB, "examples": "farm_a_*.rq", "where": "the hub, farm A's graph"},
@@ -121,32 +125,79 @@ def system_prompt(scope):
     return "\n".join(rules) + "\n\nVocabulary:\n" + vocabulary() + "\n\nWorking example queries:\n" + examples(scope)
 
 
+def remaining():
+    """Seconds left in this question's time budget (large when no budget is running, e.g. direct chat calls)."""
+    deadline = getattr(_clock, "deadline", None)
+    return 10**6 if deadline is None else deadline - time.monotonic()
+
+
+def api_keys():
+    """Every configured key, in order: LLM_API_KEYS (comma or space separated) then LLM_API_KEY. Duplicates dropped."""
+    raw = re.sub(r"[;\s]+", ",", os.getenv("LLM_API_KEYS", "")) + "," + os.getenv("LLM_API_KEY", "")
+    keys = []
+    for key in raw.split(","):
+        key = key.strip()
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
+_current = 0  # index of the key that worked last, so later questions start there instead of on a limited key
+
+
+def describe(error):
+    code = getattr(error, "code", None)
+    if code == 429:
+        return "rate limited (429)"
+    if code in (401, 403):
+        return f"rejected (HTTP {code})"
+    if code:
+        return f"server error (HTTP {code})"
+    return "unreachable or timed out"
+
+
 def chat(messages):
-    key = os.getenv("LLM_API_KEY", "")
-    if not key:
-        raise RuntimeError("No LLM_API_KEY is set. Add LLM_API_KEY=... to the .env file and restart the site.")
-    request = urllib.request.Request(
-        BASE_URL.rstrip("/") + "/chat/completions",
-        data=json.dumps({"model": MODEL, "messages": messages, "temperature": 0}).encode(),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}",
-                 "User-Agent": "vkg-windmill-assistant/1.0"},  # Cloudflare-fronted APIs (Groq) block Python-urllib's default UA (error 1010)
-    )
-    for attempt in range(5):
-        try:
-            with urllib.request.urlopen(request, timeout=90) as response:
-                body = json.load(response)
+    """One chat completion. Tries each configured key in turn: a rate limit (429), overload or 5xx, a
+    timeout or a rejected key moves on to the next key; after a full pass of retryable failures it
+    backs off briefly and goes round once more. Keys are never logged or included in error messages."""
+    global _current
+    keys = api_keys()
+    if not keys:
+        raise RuntimeError("No LLM_API_KEY is set. Add LLM_API_KEY=... (or LLM_API_KEYS=key1,key2 for backups) to the .env file and restart the site.")
+    payload = json.dumps({"model": MODEL, "messages": messages, "temperature": 0}).encode()
+    problems = {}
+    for round_number in range(2):
+        for step in range(len(keys)):
+            index = (_current + step) % len(keys)
+            left = remaining()
+            if left < 3:
+                raise RuntimeError(f"Timed out: the question took longer than {BUDGET:.0f} seconds. The language model was too slow or overloaded"
+                                   + (f" ({'; '.join(f'key {i + 1}: {m}' for i, m in sorted(problems.items()))})." if problems else ".") + " Try again in a minute.")
+            request = urllib.request.Request(
+                BASE_URL.rstrip("/") + "/chat/completions", data=payload,
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {keys[index]}",
+                         "User-Agent": "vkg-windmill-assistant/1.0"},  # Cloudflare-fronted APIs (Groq) block Python-urllib's default UA (error 1010)
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=min(LLM_TIMEOUT, left)) as response:
+                    body = json.load(response)
+                _current = index
+                return body["choices"][0]["message"]["content"] or ""
+            except urllib.error.HTTPError as error:
+                error.read()
+                if error.code == 400 or error.code == 404:  # a bad request or model name is not fixed by another key
+                    raise RuntimeError(f"LLM API error {error.code}: check LLM_MODEL and LLM_BASE_URL.") from error
+                problems[index] = describe(error)
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError) as error:
+                problems[index] = describe(error)
+        if all("rejected" in m for m in problems.values()):
             break
-        except urllib.error.HTTPError as error:
-            detail = error.read().decode(errors="replace")[:400]
-            if error.code == 429 and attempt < 4:  # free-tier tokens-per-minute limit: wait and retry
-                try:
-                    wait = float(error.headers.get("retry-after", "10"))
-                except ValueError:
-                    wait = 10.0
-                time.sleep(min(max(wait, 1.0), 30.0) + 1)
-                continue
-            raise RuntimeError(f"LLM API error {error.code}: {detail}") from error
-    return body["choices"][0]["message"]["content"] or ""
+        if round_number == 0 and remaining() > 8:
+            time.sleep(2)  # short backoff before going round the keys again
+    summary = "; ".join(f"key {i + 1} of {len(keys)}: {m}" for i, m in sorted(problems.items()))
+    if all("rejected" in m for m in problems.values()):
+        raise RuntimeError(f"The language model rejected the API key(s) ({summary}). Check LLM_API_KEY / LLM_API_KEYS in .env and restart the site.")
+    raise RuntimeError(f"Every configured language-model key failed ({summary}). The provider may be overloaded: wait a minute and ask again, or add another key to LLM_API_KEYS.")
 
 
 def extract(text):
@@ -260,6 +311,14 @@ def ask(question, scope="auto", attempts=3):
     """Answer a question. scope "auto" detects it from the wording; "farm" or "cross" is the
     user's explicit choice. A farm-scoped question that names another farm is refused, and every
     generated farm-scoped query is checked to stay inside farm A's graph."""
+    _clock.deadline = time.monotonic() + BUDGET
+    try:
+        return _ask(question, scope, attempts)
+    finally:
+        _clock.deadline = None
+
+
+def _ask(question, scope, attempts):
     question = question.strip()
     if scope not in ("auto", "farm", "cross"):
         raise ValueError("Unknown scope: use auto, farm or cross.")
@@ -284,6 +343,15 @@ def ask(question, scope="auto", attempts=3):
             sparql, columns, rows, trail, endpoint = generate(question, via, attempts)
         except Unavailable as farm_error:
             raise RuntimeError(f"Neither the hub nor farm A's own endpoint is reachable: {farm_error}") from farm_error
+    if not any(any(value for value in row.values()) for row in rows) and via == "farm" and FARM_A and remaining() > 20:
+        # The hub holds events and maintenance, not the SCADA time series; those stay at the farm.
+        try:
+            f_sparql, f_columns, f_rows, f_trail, f_endpoint = generate(question, "farm-direct", 2)
+            if f_rows:
+                sparql, columns, rows, trail, endpoint, via = f_sparql, f_columns, f_rows, trail + f_trail, f_endpoint, "farm-direct"
+                notice = "The hub had no rows for this (it does not hold the SCADA time series), so it was answered at the farm, on farm A's own Ontop endpoint."
+        except (Unavailable, ValueError):
+            pass
     return {"question": question, "scope": scope, "scope_reason": chosen_by, "via": via, "where": SCOPES[via]["where"], "notice": notice,
             "sparql": sparql, "farm_sparql": sparql if via == "farm-direct" else (at_the_farm(sparql) if scope == "farm" else None),
             "columns": columns, "rows": rows, "answer": answer_text(question, sparql, columns, rows, scope),

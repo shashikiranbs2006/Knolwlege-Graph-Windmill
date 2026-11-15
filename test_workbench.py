@@ -73,7 +73,7 @@ with urllib.request.urlopen("http://127.0.0.1:8081/", timeout=30) as response:
 assert 'id="ask-form"' in page and 'value="auto"' in page and 'value="farm"' in page and 'value="cross"' in page
 assert 'role="tab"' not in page and page.count('id="question"') == 1, "the tabs should be gone"
 assert "Data stays at the farm." in page and "Only the validated hub is shared." in page and "The hub is shared." in page
-assert "Fault diagnosis (use case 1" in page and "Cross-farm learning (use case 2" in page
+assert "Fault diagnosis <small>use case 1" in page and "Cross-farm learning <small>use case 2" in page and page.count('class="example"') == 8
 with urllib.request.urlopen("http://127.0.0.1:8081/status", timeout=30) as response:
     health = json.load(response)
 assert health["scopes"]["farm"] == {"ok": True, "via": "hub"} and health["scopes"]["cross"]["ok"], health
