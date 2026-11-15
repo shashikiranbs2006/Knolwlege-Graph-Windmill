@@ -116,6 +116,7 @@ def system_prompt(scope):
         "Whenever maintenance, faults or diagnoses are returned, also return their wind:recordKind as ?recordKind.",
         f"Never return more than {MAX_ROWS} rows: always end with LIMIT {MAX_ROWS} or less. Use aggregates for counts.",
         "Never use SERVICE, FROM or FROM NAMED.",
+        "SPARQL syntax rules: never BIND(... AS ?x) to a variable that already appears earlier in the query (bind a NEW name, or just select the variable you already have); every SELECT variable must be bound; put FILTER after the patterns it uses.",
         "Reply with the query only, inside a ```sparql code block.",
     ]
     if scope == "farm":
@@ -301,7 +302,7 @@ def generate(question, scope, attempts):
         except ValueError as error:
             trail.append({"sparql": sparql, "error": str(error)})
             messages += [{"role": "assistant", "content": reply},
-                         {"role": "user", "content": f"That query failed: {str(error)[:800]}\nReturn a corrected query."}]
+                         {"role": "user", "content": f"That query failed: {str(error)[:800]}\nReturn a corrected query. Do not BIND to a variable already in scope (use a new name or remove the BIND), and keep the parts that worked."}]
             continue
         if not rows and len(trail) < attempts - 1:
             trail.append({"sparql": sparql, "error": "0 rows"})
