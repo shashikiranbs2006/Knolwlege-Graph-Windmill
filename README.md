@@ -88,6 +88,8 @@ What to know:
 - **Adding a source.** Map it to the same `wind:` terms (a new table plus mapping rule for CSV or SQL, a new Ontop node for another database, a loader or RDF export for a REST API), add a shape in `vkg/shapes.ttl` if it brings a new kind of record, add an example query under `queries/`, then re-run `hub/build_hub.py`.
 - **Farm C is demo data.** The Neo4j graph in `neo4j/farm_c.cypher` is fictional (2 turbines, 2 alarms, 2 faults, 2 maintenance events) and is exported as a copy, so it goes stale until you re-run the export.
 
+The printable walkthrough of this flow (3 pages) is [docs/how_a_question_is_answered_v3.pdf](docs/how_a_question_is_answered_v3.pdf), built from [the HTML](docs/how_a_question_is_answered_v3.html).
+
 Architecture (source: [docs/architecture.mmd](docs/architecture.mmd); GitHub and VS Code render the block below):
 
 ```mermaid
