@@ -7,16 +7,21 @@ flowchart TD
   DET --> CROSS
   FARM --> NAMES{"Names another farm?<br/>(Penmanshiel, farm B/C)"}
   NAMES -- "yes" --> REFUSE["Refused before any LLM call:<br/>switch to All farms or Auto"]
-  NAMES -- "no" --> LLMF["LLM writes SPARQL<br/>every pattern inside GRAPH &lt;graph/kelmarsh&gt;"]
-  CROSS --> LLMC["LLM writes SPARQL<br/>GRAPH ?g bound from the farm registry"]
-  LLMF --> CHECK
-  LLMC --> CHECK
-  CHECK{"check(): SELECT only, LIMIT ≤ 50,<br/>no SERVICE / FROM / updates,<br/>farm scope: no other graph"}
+  NAMES -- "no" --> ROUTE
+  CROSS --> ROUTE{"LLM picks a tool<br/>(route in assistant.py)"}
+  ROUTE -- "knowledge: alarms, faults, repairs" --> LLMS["LLM writes SPARQL<br/>This farm: inside GRAPH &lt;graph/kelmarsh&gt;<br/>All farms: GRAPH ?g from the registry"]
+  LLMS --> CHECK{"check(): SELECT only, LIMIT ≤ 50,<br/>no SERVICE / FROM / updates,<br/>farm scope: no other graph"}
   CHECK -- "fails" --> RETRY["error fed back to the LLM<br/>(up to 3 attempts)"] --> CHECK
   CHECK -- "passes" --> HUB["Run on the hub (Fuseki)"]
   HUB -- "hub down, farm A question" --> OA["Fallback: farm A's own Ontop endpoint<br/>(answered at the farm, page says so)"]
   HUB -- "hub down, all-farms question" --> ERR["Reports the hub is unavailable"]
+  ROUTE -- "measurements: average power, wind speed" --> PARAMS["LLM returns parameters only<br/>metric, agg, group_by, farms, window"]
+  PARAMS --> VALID["farm_metrics.py validates against hub/farms.csv<br/>This farm: farms forced to farm A<br/>unknown, unpublished or withheld signals refused"]
+  VALID --> LIVE["One aggregate per farm, in parallel, live on each farm's Ontop<br/>(AVG / COUNT run as SQL at the farm)"]
+  LIVE -- "a farm is offline or slow" --> NAMED["That farm is named in the answer,<br/>the others still answer"]
   HUB --> ROWS["Result rows"]
   OA --> ROWS
-  ROWS --> REPLY["LLM writes the reply from the rows only<br/>labels synthetic_demo / curated_demo"]
-  REPLY --> PAGE["Page shows: scope used and why, reply,<br/>SPARQL, rows, 'at the farm' replay (farm A)"]
+  LIVE --> ROWS
+  NAMED --> ROWS
+  ROWS --> REPLY["LLM writes the reply from the rows only<br/>labels synthetic_demo / curated_demo;<br/>farm rankings carry a capacity-factor caveat"]
+  REPLY --> PAGE["Page shows: scope used and why, reply,<br/>'Live farm query' badge for measurements,<br/>SPARQL, rows, 'at the farm' replay (farm A)"]

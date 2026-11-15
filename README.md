@@ -7,7 +7,7 @@ A standards-based knowledge graph over open wind-farm SCADA data, following Kwak
 3. **Virtual layer per farm.** **Ontop** publishes each farm as a virtual RDF graph. Nothing is copied at the farm.
 4. **Validation.** Every farm graph must pass the wind-core **SHACL** shapes (`vkg/shapes.ttl`) before it enters the hub.
 5. **Hub.** One **Apache Jena Fuseki 6.2** endpoint holds **one named graph per farm** plus the shared curated knowledge: the fault catalogue and the alarm-to-fault links with their confidence as **RDF 1.2 annotations**.
-6. **Assistant.** One LLM assistant (Gemini by default, Groq works) turns plain-English questions into read-only SPARQL **against the hub only** and answers only from the returned rows.
+6. **Assistant.** One LLM assistant (Gemini by default, Groq works) first picks a tool. **Knowledge questions** (alarms, faults, repairs, governance) become read-only SPARQL against the hub. **Measurement questions** (average power, wind speed, per farm, per turbine or per month) use the small `farm_metric` tool, which asks each farm's own Ontop for one aggregate, live. The assistant answers only from the returned rows.
 
 **One site, one question box** at **http://127.0.0.1:8081/**. Type a question; the scope is detected from its wording, or pick it with the scope chip:
 
@@ -17,7 +17,7 @@ A standards-based knowledge graph over open wind-farm SCADA data, following Kwak
 | This farm | 1, fault diagnosis | `GRAPH <https://w3id.org/wind-core/data/graph/kelmarsh>` only, plus the shared curated knowledge |
 | All farms | 2, cross-farm learning | every farm graph (`GRAPH ?g`, bound from the farm registry), plus the shared curated knowledge |
 
-The page shows which scope was used and why, and offers example chips for both use cases. **Privacy:** data stays at the farm (each farm publishes only through its own Ontop endpoint); only the validated hub is shared, and the page says so. The safety rule is unchanged and enforced in code: a *This farm* question that names another farm is refused before the LLM is called, and every generated farm-scoped query is checked to stay inside farm A's graph. Services still fail independently: the page shows one status line for farm A questions and one for all-farms questions; if the hub is down, farm A questions are answered **at the farm**, on farm A's own Ontop endpoint, and say so, while all-farms questions report that the hub is unavailable. A collapsed **"At the farm"** panel keeps raw SPARQL on farm A's Ontop endpoint with the query journey (SPARQL → mapping → Ontop SQL → PostgreSQL), and every farm A answer has a button that replays the same question there.
+The page shows which scope was used and why, and offers example chips for both use cases. **Privacy:** data stays at the farm (each farm publishes only through its own Ontop endpoint); only the validated hub is shared, and the page says so. The safety rule is unchanged and enforced in code: a *This farm* question that names another farm is refused before the LLM is called, and every generated farm-scoped query is checked to stay inside farm A's graph. Services still fail independently: the page shows one status line for farm A questions and one for all-farms questions; if the hub is down, farm A questions are answered **at the farm**, on farm A's own Ontop endpoint, and say so, while all-farms questions report that the hub is unavailable. **Measurements are live, not copied.** The hub does not hold SCADA readings, so a question such as *"What is the average power per farm, and which farm is highest?"* is routed to `farm_metric` ([farm_metrics.py](farm_metrics.py)). The LLM only picks parameters (metric, aggregate, per farm / turbine / month, farms, date window); it never writes multi-endpoint SPARQL and never sees an endpoint. The code validates them against the farm registry ([hub/farms.csv](hub/farms.csv): each farm's `signals`, `withheld_signals`, `max_rows`, `timeout_s`), forces `farms` to farm A for a *This farm* question, sends one aggregate query per farm in parallel (the `AVG`/`COUNT` run as SQL at the farm, so only a few rows travel), and merges the rows. A farm that is offline, slow, does not publish the signal or withholds it is named in the answer while the other farms still answer; unequal units are never merged. Rankings between farms carry a caveat and, for power, the **capacity factor** (average power divided by rated power from each farm's own turbine records), because both farms use the same turbine class (Senvion, 2,050 kW). The page shows a *Live farm query* badge and which farms answered. Example check: Kelmarsh about 515 kW (capacity factor 0.251), Penmanshiel about 527 kW (0.257). A collapsed **"At the farm"** panel keeps raw SPARQL on farm A's Ontop endpoint with the query journey (SPARQL → mapping → Ontop SQL → PostgreSQL), and every farm A answer has a button that replays the same question there.
 
 | Service | Where | Data |
 | --- | --- | --- |
@@ -84,7 +84,7 @@ What to know:
 
 - **Where the LLM gets its terms.** `assistant.py` (`system_prompt` and `vocabulary`) reads `vkg/ontology.ttl` and pastes one line per term into the prompt. Add a term to the ontology and the LLM sees it on the next run.
 - **What a mapping rule is.** A target (the RDF to produce, with `{column}` placeholders) plus a source (the SQL that produces those columns). Example: rule `events` in `vkg/mapping.obda` makes `wind:message` from `status_events.message`.
-- **Hub versus farm.** The hub holds a validated copy of each farm's events, diagnoses and maintenance records, taken when you run `hub/build_hub.py`. SCADA time series stay at the farm and are queried through the "At the farm" panel.
+- **Hub versus farm.** The hub holds a validated copy of each farm's events, diagnoses and maintenance records, taken when you run `hub/build_hub.py`. SCADA time series stay at the farm: the assistant asks them live through `farm_metric`, and the "At the farm" panel shows them as raw SPARQL.
 - **Adding a source.** Map it to the same `wind:` terms (a new table plus mapping rule for CSV or SQL, a new Ontop node for another database, a loader or RDF export for a REST API), add a shape in `vkg/shapes.ttl` if it brings a new kind of record, add an example query under `queries/`, then re-run `hub/build_hub.py`.
 - **Farm C is demo data.** The Neo4j graph in `neo4j/farm_c.cypher` is fictional (2 turbines, 2 alarms, 2 faults, 2 maintenance events) and is exported as a copy, so it goes stale until you re-run the export.
 
@@ -124,7 +124,9 @@ flowchart TB
     NEO[("Neo4j")] --> EXP["neo4j_farm_c.py<br/>export to wind-core"]
   end
   USER --> SITE
-  LLM -- "SPARQL" --> HUB
+  LLM -- "knowledge: SPARQL" --> HUB
+  LLM -- "measurements: farm_metric parameters" --> FM["farm_metrics.py<br/>validated aggregate per farm, parallel,<br/>names a farm that is offline"]
+  FM -- "live aggregate (AVG/COUNT as SQL)" --> OA & OB
   LLM -. "fallback if the hub is down<br/>(farm A questions only, at the farm)" .-> OA
   T1 -. "at-the-farm panel:<br/>SPARQL → mapping → SQL journey" .-> OA
   OA -- "harvest (assets, events,<br/>diagnoses, maintenance)" --> BUILD
@@ -138,7 +140,7 @@ flowchart TB
 
 `hub/build_hub.py` asks each farm's Ontop endpoint for its published records with one SPARQL `CONSTRUCT` per class (farms, turbines, components, events, diagnoses, maintenance, technicians, parts, logs, datasets, event instants), validates the result with SHACL (RDFS inference on), and writes the farm's named graph only if it conforms. The farm registry in the hub's default graph records, for each farm, its endpoint, its graph, when it was harvested (`wind:harvestedAt`) and how many triples it has. If a farm endpoint is down during a rebuild, the farm's last validated snapshot is kept, so one farm being down never empties the hub. A farm that fails SHACL is not loaded; the report is written to `build/hub/farms/<farm>.shacl-report.txt`.
 
-The **SCADA time series stay at the farm**: observations are not harvested. Ask them on the farm's own endpoint (the "At the farm" panel, or http://127.0.0.1:8080/sparql). The hub holds a validated copy of the *published, non-time-series* part of each farm graph; the farm databases remain the source of truth, and the hub is refreshed by re-running the build:
+The **SCADA time series stay at the farm**: observations are not harvested. The assistant asks them live through `farm_metric`; you can also use the farm's own endpoint (the "At the farm" panel, or http://127.0.0.1:8080/sparql). The hub holds a validated copy of the *published, non-time-series* part of each farm graph; the farm databases remain the source of truth, and the hub is refreshed by re-running the build:
 
 ```powershell
 uv run --with rdflib --with pyshacl python hub/build_hub.py   # harvest + SHACL check every farm (about 2 minutes)
@@ -160,7 +162,7 @@ Checks (with the services running):
 uv run --offline python run_demo.py --verify --benchmark   # farm A at the farm: SPARQL on Ontop = SQL, counts, timing
 uv run --offline python run_hub.py --verify                # hub: use case 1 on farm A's graph = SQL on farm A; use case 2 = SQL on both farms
 uv run --offline python test_workbench.py                  # site: single question box, per-scope status, hub queries, farm A journey
-uv run --offline python test_assistant.py                  # assistant with a fake LLM: scopes and auto-detection, retry, hub = farm, hub-down fallback, unsafe queries
+uv run --offline python test_assistant.py                  # assistant with a fake LLM: scopes and auto-detection, retry, hub = farm, hub-down fallback, unsafe queries, tool routing, live farm_metric (offline farm named, scope forced)
 uv run --with rdflib --with pyshacl python check_graph.py  # ontology + SHACL check of farm A's endpoint
 uv run --with rdflib --with pyshacl python check_graph.py http://127.0.0.1:8082/sparql farm_b/mapping.obda   # farm B
 ```
@@ -177,19 +179,24 @@ flowchart TD
   DET --> CROSS
   FARM --> NAMES{"Names another farm?<br/>(Penmanshiel, farm B/C)"}
   NAMES -- "yes" --> REFUSE["Refused before any LLM call:<br/>switch to All farms or Auto"]
-  NAMES -- "no" --> LLMF["LLM writes SPARQL<br/>every pattern inside GRAPH &lt;graph/kelmarsh&gt;"]
-  CROSS --> LLMC["LLM writes SPARQL<br/>GRAPH ?g bound from the farm registry"]
-  LLMF --> CHECK
-  LLMC --> CHECK
-  CHECK{"check(): SELECT only, LIMIT ≤ 50,<br/>no SERVICE / FROM / updates,<br/>farm scope: no other graph"}
+  NAMES -- "no" --> ROUTE
+  CROSS --> ROUTE{"LLM picks a tool<br/>(route in assistant.py)"}
+  ROUTE -- "knowledge: alarms, faults, repairs" --> LLMS["LLM writes SPARQL<br/>This farm: inside GRAPH &lt;graph/kelmarsh&gt;<br/>All farms: GRAPH ?g from the registry"]
+  LLMS --> CHECK{"check(): SELECT only, LIMIT ≤ 50,<br/>no SERVICE / FROM / updates,<br/>farm scope: no other graph"}
   CHECK -- "fails" --> RETRY["error fed back to the LLM<br/>(up to 3 attempts)"] --> CHECK
   CHECK -- "passes" --> HUB["Run on the hub (Fuseki)"]
   HUB -- "hub down, farm A question" --> OA["Fallback: farm A's own Ontop endpoint<br/>(answered at the farm, page says so)"]
   HUB -- "hub down, all-farms question" --> ERR["Reports the hub is unavailable"]
+  ROUTE -- "measurements: average power, wind speed" --> PARAMS["LLM returns parameters only<br/>metric, agg, group_by, farms, window"]
+  PARAMS --> VALID["farm_metrics.py validates against hub/farms.csv<br/>This farm: farms forced to farm A<br/>unknown, unpublished or withheld signals refused"]
+  VALID --> LIVE["One aggregate per farm, in parallel, live on each farm's Ontop<br/>(AVG / COUNT run as SQL at the farm)"]
+  LIVE -- "a farm is offline or slow" --> NAMED["That farm is named in the answer,<br/>the others still answer"]
   HUB --> ROWS["Result rows"]
   OA --> ROWS
-  ROWS --> REPLY["LLM writes the reply from the rows only<br/>labels synthetic_demo / curated_demo"]
-  REPLY --> PAGE["Page shows: scope used and why, reply,<br/>SPARQL, rows, 'at the farm' replay (farm A)"]
+  LIVE --> ROWS
+  NAMED --> ROWS
+  ROWS --> REPLY["LLM writes the reply from the rows only<br/>labels synthetic_demo / curated_demo;<br/>farm rankings carry a capacity-factor caveat"]
+  REPLY --> PAGE["Page shows: scope used and why, reply,<br/>'Live farm query' badge for measurements,<br/>SPARQL, rows, 'at the farm' replay (farm A)"]
 ```
 
 ## The two use cases
@@ -215,9 +222,10 @@ Repair differences between farms come from **synthetic** work orders, designed t
 | Farm A relations (how rows become edges) | `vkg/mapping.obda` → generated `vkg/mapping.ttl` (R2RML, used at runtime) | text |
 | Farm B facts / relations | volume `farmb_pgdata`, `farm_b/schema.sql`, `prepare_farm_b.py`, `farm_b/mapping.obda` → `farm_b/mapping.ttl` | **yes** / text |
 | Curated fault knowledge | `data/curated/fault_conditions.csv`, `alarm_fault_rules.csv` → farm tables *and* `hub/build_hub.py` → hub default graph (RDF 1.2) | text |
-| Farm registry (endpoint, harvest endpoint, governance) | `hub/farms.csv` | text |
+| Farm registry (endpoints, governance, and for `farm_metric` the `signals`, `withheld_signals`, `max_rows`, `timeout_s`) | `hub/farms.csv` | text |
 | Hub dataset | `hub/build_hub.py` → `build/hub/hub.trig` (default graph + one named graph per farm); validated farm snapshots in `build/hub/farms/` | **yes** (rebuilt) |
-| Assistant | `assistant.py` (one assistant; per-scope prompt built from `ontology.ttl` + `queries/farm_a_*.rq` or `queries/hub_0[123]_*.rq`) | |
+| Live measurement tool | `farm_metrics.py` (`farm_metric`: validated aggregate per farm, parallel, names offline farms) | |
+| Assistant | `assistant.py` (one assistant, tool routing hub vs farm_metric; per-scope prompt built from `ontology.ttl` + `queries/farm_a_*.rq` or `queries/hub_0[123]_*.rq`) | |
 | Site | `query_workbench.py` + `workbench.js` (one question box, `/status` per scope, at-the-farm journey) | |
 
 IRIs follow one template per entity type, farm-scoped: `https://w3id.org/wind-core/data/farm/{farm}/turbine/{id}`, `.../event/{row}`, `.../component/{Gearbox|Generator}`. Faults are shared across farms: `https://w3id.org/wind-core/data/fault/{FaultCode}`.
@@ -226,7 +234,7 @@ IRIs follow one template per entity type, farm-scoped: `https://w3id.org/wind-co
 
 **Add a class (object type):** declare it in the ontology (e.g. `rdfs:subClassOf wind:Component`), add a table or view and its loader (`schema.sql`, `prepare_data.py`, and the `TRUNCATE`/`COPY` lines in `load.sql`), add a `mappingId` block, add a SHACL shape, regenerate, restart, test.
 
-**Add a farm:** load its data in any SQL layout, write one mapping to wind-core, run `check_graph.py` against its endpoint, add a row to `hub/farms.csv` (with the endpoint the hub can reach for harvesting), rebuild the hub. It appears as a new named graph and in All-farms answers without code changes.
+**Add a farm:** load its data in any SQL layout, write one mapping to wind-core, run `check_graph.py` against its endpoint, add a row to `hub/farms.csv` (with the endpoint the hub can reach for harvesting, plus `signals` and `withheld_signals` for live measurements), rebuild the hub. It appears as a new named graph and in All-farms answers without code changes.
 
 ## Data honesty and governance
 

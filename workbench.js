@@ -290,7 +290,7 @@ function showSpinner(started) {
   box.className = "spinner";
   box.append(document.createElement("i"));
   const text = add("span", "", box);
-  const tick = () => { text.textContent = `Detecting the scope, writing a SPARQL query and running it… ${Math.round((Date.now() - started) / 1000)} s (gives up after about 100 s)`; };
+  const tick = () => { text.textContent = `Detecting the scope, choosing hub or live farm query, and running it… ${Math.round((Date.now() - started) / 1000)} s (gives up after about 100 s)`; };
   tick();
   return setInterval(tick, 1000);
 }
@@ -320,9 +320,15 @@ askForm.addEventListener("submit", async event => {
     if (kinds.has("synthetic_demo")) add("p", "synthetic_demo: maintenance and repair records in this answer are fabricated for the demo, not real repairs.", askResult).className = "warning";
     if (kinds.has("curated_demo")) add("p", "curated_demo: fault links and confidences come from illustrative demo rules, not validated diagnoses.", askResult).className = "warning";
     add("p", `Scope: ${scopeNames[data.scope]} · ${data.scope_reason}`, askResult).className = "hint";
+    if (data.tool === "farm_metric") {
+      const live = add("p", "Live farm query: these numbers were measured just now by asking each farm's own endpoint for one aggregate. Nothing was read from the hub's copy, and raw readings stayed at the farms.", askResult);
+      live.className = "live";
+      const st = {ok: "answered", offline: "did not answer", not_published: "does not publish this signal", withheld: "withholds this signal", no_data: "no readings", error: "rejected the query", unsupported: "not supported yet"};
+      add("p", "Farms asked: " + data.farm_metric.farms.map(f => `${f.name} (${st[f.status] || f.status})`).join(", "), askResult).className = "hint";
+    }
     add("p", `Answered on ${data.where} · model ${data.model} · ${data.rows.length} row(s) from ${data.endpoint}` + (data.attempts.length ? ` · ${data.attempts.length} query attempt(s) corrected automatically` : ""), askResult).className = "hint";
     const details = add("details", "", askResult);
-    add("summary", "Generated SPARQL and result rows", details);
+    add("summary", data.tool === "farm_metric" ? "Per-farm aggregate queries and result rows" : "Generated SPARQL and result rows", details);
     add("pre", data.sparql, details);
     if (data.columns.length) table(data.columns, data.rows, details);
     if (data.farm_sparql && form) {

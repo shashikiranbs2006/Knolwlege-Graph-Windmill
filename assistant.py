@@ -1,8 +1,12 @@
-"""One assistant for both use cases: plain-English question -> SPARQL on the hub -> grounded reply.
+"""One assistant for both use cases: plain-English question -> a tool -> grounded reply.
 
-Every question goes to the hub (Apache Jena Fuseki), which holds one named graph per farm plus
-the shared curated knowledge. The scope is detected from the question's wording (detect_scope),
-unless the user picks it:
+The LLM first picks one of two tools (route):
+    ask the hub          knowledge questions (alarms, faults, repairs, governance): SPARQL on the hub
+                         (Apache Jena Fuseki), one named graph per farm plus the shared curated knowledge
+    ask the farms        measurement questions (average power, wind speed ...): farm_metric, a small
+                         validated tool (farm_metrics.py) that asks each farm's own Ontop for one
+                         aggregate, live. The LLM only picks parameters; it never writes this SPARQL.
+The scope is detected from the question's wording (detect_scope), unless the user picks it:
 
     scope "farm"   use case 1: only farm A's named graph (plus the shared curated knowledge)
     scope "cross"  use case 2: every farm graph, joined through the hub's farm registry
@@ -51,6 +55,7 @@ SCOPES = {
     "cross": {"endpoint": lambda: HUB, "examples": "hub_0[123]_*.rq", "where": "the hub, all farm graphs"},
     "farm-direct": {"endpoint": lambda: FARM_A, "examples": "0[1235]_*.rq", "where": "farm A's own Ontop endpoint"},
 }
+FARM_A_ID = FARM_A_GRAPH.rstrip("/").rsplit("/", 1)[-1]  # "kelmarsh": the only farm a "This farm" question may touch
 
 
 # Scope detection from the question's wording. Anything naming another farm, several farms or a
@@ -307,6 +312,75 @@ def generate(question, scope, attempts):
     raise ValueError("I could not produce a working query: " + (trail[-1]["error"] if trail else "no reply"))
 
 
+def route_prompt(scope, farms):
+    listing = "\n".join(f"- {fid}: {f['name']}, signals {', '.join(f['signal_list'])}" for fid, f in farms.items())
+    limit = (f'This question is limited to farm "{FARM_A_ID}": use only that farm.' if scope == "farm" else "Use every farm that is needed (usually all).")
+    return (
+        "You choose how to answer a wind-farm engineering question. Reply with ONE JSON object and nothing else.\n"
+        'Tool "hub": knowledge questions (alarms, faults, diagnoses, repairs, work orders, turbines, what a farm publishes or withholds). Reply {"tool": "hub"}.\n'
+        'Tool "farm_metric": measurement questions answered from the farms\' live SCADA readings (average, minimum, maximum, total or count of power, wind speed, exported energy, gear oil temperature), optionally per farm, per turbine or per month. Reply '
+        '{"tool": "farm_metric", "metric": "Power|WindSpeed|EnergyExport|GearOilTemperature", "agg": "avg|min|max|sum|count", "group_by": "farm|turbine|month", "farms": ["farm id", ...], "start": "YYYY-MM-DD or null", "end": "YYYY-MM-DD or null (exclusive)"}.\n'
+        "Use group_by farm unless the question asks per turbine or per month. Leave start and end null unless the question names a period. Never write SPARQL or endpoints.\n"
+        "If a question needs both knowledge and measurements, pick the main one.\n" + limit + "\nFarms:\n" + listing)
+
+
+def route(question, scope):
+    """Let the LLM choose the tool. Returns ("hub", None) or ("farm_metric", validated parameters).
+    The scope rule is enforced here in code: a "This farm" question can only ever touch farm A."""
+    import farm_metrics
+    farms = farm_metrics.registry()
+    messages = [{"role": "system", "content": route_prompt(scope, farms)}, {"role": "user", "content": question}]
+    for _ in range(2):
+        reply = chat(messages)
+        try:
+            choice = json.loads(re.search(r"\{.*\}", reply, re.S).group(0))
+        except (AttributeError, ValueError):
+            return "hub", None
+        if choice.get("tool") != "farm_metric":
+            return "hub", None
+        if scope == "farm":
+            choice["farms"] = [FARM_A_ID]
+        try:
+            return "farm_metric", farm_metrics.validate(choice, farms)
+        except ValueError as error:
+            messages += [{"role": "assistant", "content": reply},
+                         {"role": "user", "content": f"Invalid parameters: {error} Reply with a corrected JSON object."}]
+    return "hub", None
+
+
+def farm_answer_text(question, result):
+    rows, missing = result["rows"], result["missing"]
+    if not rows:
+        reasons = "; ".join(m["detail"] for m in missing) or "the farms returned no readings for that request"
+        return f"No measurement could be returned: {reasons}."
+    prompt = (
+        "Answer the engineer's question in 2-4 plain sentences using ONLY the measurement rows below. Each row is one aggregate computed live at that farm's own endpoint. "
+        "Quote values, units and farm names exactly. Mention the number of readings. Include the caveats below in your own words. Do not add numbers that are not in the rows.\n\n"
+        f"Question: {question}\nParameters: {json.dumps(result['params'])}\nCaveats: {json.dumps(result['caveats'])}\nRows (JSON): {json.dumps(rows[:50])}")
+    text = chat([{"role": "user", "content": prompt}]).strip()
+    for m in missing:  # an unanswered farm must always be named
+        if m["name"].lower() not in text.lower():
+            text += f" Note: {m['detail']}."
+    return text
+
+
+def ask_farms(question, scope, params):
+    """Run the farm_metric tool and shape the result like a hub answer so the page can show it."""
+    import farm_metrics
+    result = farm_metrics.farm_metric(params)
+    called = [f for f in result["farms"] if f["endpoint"]]
+    names = ", ".join(f["name"] for f in result["farms"])
+    where = "live queries to each farm's own Ontop endpoint (" + names + ")"
+    columns = ["farm", "turbine", "month", "unit", "value", "readings", "rated_kw", "capacity_factor"]
+    columns = [c for c in columns if any(c in row for row in result["rows"])] or ["farm", "unit", "value", "readings"]
+    return {"question": question, "scope": scope, "tool": "farm_metric", "via": "farm-live", "where": where, "notice": " ".join(result["caveats"]),
+            "sparql": "\n\n".join(f"# {f['name']} ({f['status']})\n{f['sparql']}" for f in result["farms"] if f["sparql"]),
+            "farm_sparql": None, "columns": columns, "rows": result["rows"], "answer": farm_answer_text(question, result),
+            "attempts": [], "model": MODEL, "endpoint": ", ".join(f["endpoint"] for f in called) or "none reachable",
+            "farm_metric": {"params": result["params"], "farms": [{k: f[k] for k in ("farm", "name", "status")} for f in result["farms"]],
+                            "missing": result["missing"], "caveats": result["caveats"]}}
+
+
 def ask(question, scope="auto", attempts=3):
     """Answer a question. scope "auto" detects it from the wording; "farm" or "cross" is the
     user's explicit choice. A farm-scoped question that names another farm is refused, and every
@@ -331,6 +405,11 @@ def _ask(question, scope, attempts):
     elif scope == "farm" and OTHER_FARMS.search(question):
         raise ValueError(f'This question names another farm ("{OTHER_FARMS.search(question).group(0)}"), but the scope is "This farm", '
                          "which may only read farm A's data. Switch the scope to All farms (or Auto) to compare farms.")
+    tool, params = route(question, scope)
+    if tool == "farm_metric":
+        reply = ask_farms(question, scope, params)
+        reply["scope_reason"] = chosen_by
+        return reply
     via, notice = scope, ""
     try:
         sparql, columns, rows, trail, endpoint = generate(question, scope, attempts)
@@ -352,7 +431,7 @@ def _ask(question, scope, attempts):
                 notice = "The hub had no rows for this (it does not hold the SCADA time series), so it was answered at the farm, on farm A's own Ontop endpoint."
         except (Unavailable, ValueError):
             pass
-    return {"question": question, "scope": scope, "scope_reason": chosen_by, "via": via, "where": SCOPES[via]["where"], "notice": notice,
+    return {"question": question, "scope": scope, "tool": "hub", "scope_reason": chosen_by, "via": via, "where": SCOPES[via]["where"], "notice": notice,
             "sparql": sparql, "farm_sparql": sparql if via == "farm-direct" else (at_the_farm(sparql) if scope == "farm" else None),
             "columns": columns, "rows": rows, "answer": answer_text(question, sparql, columns, rows, scope),
             "attempts": trail, "model": MODEL, "endpoint": endpoint}
