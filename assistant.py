@@ -326,25 +326,32 @@ def route_prompt(scope, farms):
 
 def route(question, scope):
     """Let the LLM choose the tool. Returns ("hub", None) or ("farm_metric", validated parameters).
-    The scope rule is enforced here in code: a "This farm" question can only ever touch farm A."""
+    The scope rule is enforced here in code: a "This farm" question can only ever touch farm A.
+    A reply that is not a valid choice (for example the model answering the question itself) is
+    sent back with the required format, up to three tries, before falling back to the hub."""
     import farm_metrics
     farms = farm_metrics.registry()
-    messages = [{"role": "system", "content": route_prompt(scope, farms)}, {"role": "user", "content": question}]
-    for _ in range(2):
+    messages = [{"role": "system", "content": route_prompt(scope, farms)},
+                {"role": "user", "content": f"Question: {question}\n\nDo NOT answer the question. Reply only with the JSON choice of tool."}]
+    for _ in range(3):
         reply = chat(messages)
         try:
             choice = json.loads(re.search(r"\{.*\}", reply, re.S).group(0))
+            tool = choice.get("tool")
         except (AttributeError, ValueError):
+            choice, tool = {}, None
+        if tool == "hub":
             return "hub", None
-        if choice.get("tool") != "farm_metric":
-            return "hub", None
-        if scope == "farm":
-            choice["farms"] = [FARM_A_ID]
-        try:
-            return "farm_metric", farm_metrics.validate(choice, farms)
-        except ValueError as error:
-            messages += [{"role": "assistant", "content": reply},
-                         {"role": "user", "content": f"Invalid parameters: {error} Reply with a corrected JSON object."}]
+        if tool == "farm_metric":
+            if scope == "farm":
+                choice["farms"] = [FARM_A_ID]
+            try:
+                return "farm_metric", farm_metrics.validate(choice, farms)
+            except ValueError as error:
+                problem = f"Invalid parameters: {error} Reply with a corrected JSON object."
+        else:
+            problem = 'That was not a tool choice. Reply with exactly {"tool": "hub"} or a farm_metric JSON object, and do not answer the question.'
+        messages += [{"role": "assistant", "content": reply}, {"role": "user", "content": problem}]
     return "hub", None
 
 

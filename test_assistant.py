@@ -176,6 +176,12 @@ script[:] = ['{"tool": "hub"}', "```sparql\n" + HUB_UC1 + "\n```", REPLY]
 assert assistant.ask(QUESTION)["tool"] == "hub", "a knowledge question stays on the hub"
 
 
+# The model answers the question itself instead of choosing a tool: it is sent back, then the tool runs.
+script[:] = ['{"kelmarsh": 3.2, "highest_farm": "kelmarsh"}', POWER, "Penmanshiel has the higher average power."]
+result = assistant.ask("What is the average power per farm, and which farm is highest?")
+assert result["tool"] == "farm_metric", "a reply that is not a tool choice must be retried, not sent to the hub"
+print("routing: a reply that answers the question instead of choosing a tool is retried")
+
 # 5. Unsafe or out-of-scope queries are refused.
 farm_b = "SELECT * WHERE { GRAPH <https://w3id.org/wind-core/data/graph/penmanshiel> { ?s ?p ?o } } LIMIT 5"
 for bad, scope in (("DELETE WHERE { ?s ?p ?o }", "farm"), ("SELECT * WHERE { SERVICE <http://evil/> { ?s ?p ?o } }", "cross"),
