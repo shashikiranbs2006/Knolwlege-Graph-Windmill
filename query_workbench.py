@@ -185,6 +185,67 @@ def hub_answers(sparql):
     return {"columns": columns, "rows": rows}
 
 
+EXPLAIN_CSS = """
+.explain-btn{position:fixed;top:.75rem;right:1rem;z-index:20;margin:0;display:flex;align-items:center;gap:.4rem;padding:.45rem .8rem;background:#175c45;color:#fff;border:0;border-radius:999px;font:inherit;font-size:.9rem;font-weight:700;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.explain-btn:hover,.explain-btn:focus-visible{background:#0d4734}
+.explain-btn svg{width:1.1rem;height:1.1rem}
+#explain-dialog{width:min(980px,94vw);max-height:92vh;padding:0;border:1px solid #91a79b;border-radius:6px;background:#fff;color:#17332b}
+#explain-dialog::backdrop{background:rgba(16,44,37,.55)}
+.xd-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.9rem 1.25rem;border-bottom:1px solid #d5dfd7;position:sticky;top:0;background:#fff}
+.xd-head h2{margin:0;font-size:1.2rem}
+.xd-head button{margin:0;padding:.35rem .8rem;background:#e8f0e9;color:#174a35;border:1px solid #9dbda8}
+.xd-body{padding:1rem 1.25rem 1.5rem;font-size:.92rem}
+.xd-body h3{font-size:1rem;margin:1.1rem 0 .4rem}
+.xd-flow{display:flex;flex-direction:column;align-items:stretch;gap:.35rem}
+.xd-box{border:2px solid #175c45;background:#eef5ef;padding:.55rem .8rem}
+.xd-box b{display:block}
+.xd-box small{display:block;color:#3c5d4c;margin-top:.15rem}
+.xd-box.llm{border-color:#8a5a00;background:#fff4dc}
+.xd-box.hub{border-color:#1f4f8f;background:#e8f0fb}
+.xd-box.src{border-style:dashed;background:#f4f6f2}
+.xd-arrow{text-align:center;color:#175c45;font-weight:700;line-height:1}
+.xd-arrow small{font-weight:400;color:#52685e;margin-left:.4rem}
+.xd-row{display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem}
+.xd-lane{border:1px dashed #91a79b;padding:.7rem;margin-top:.4rem;background:#fafbf9}
+.xd-note{background:#fff4dc;border-left:4px solid #a86000;padding:.5rem .75rem;margin:.8rem 0 0}
+.xd-body ul{margin:.3rem 0;padding-left:1.2rem}
+@media(max-width:700px){.xd-row{grid-template-columns:1fr}}
+"""
+
+EXPLAIN_HTML = """<button type="button" id="explain-open" class="explain-btn" aria-haspopup="dialog" aria-controls="explain-dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 11v6M12 7.5v.01" stroke-linecap="round"/></svg>Explanation</button>
+<dialog id="explain-dialog" aria-labelledby="explain-title"><div class="xd-head"><h2 id="explain-title">How a question is answered</h2><button type="button" id="explain-close">Close</button></div><div class="xd-body">
+<p>New to RDF? An <strong>ontology</strong> is the shared list of terms (turbine, alarm, fault). A <strong>mapping</strong> says which database column makes which term. <strong>SPARQL</strong> is the query language over those terms. The assistant writes the SPARQL for you.</p>
+<div class="xd-flow">
+<div class="xd-box"><b>1. You ask in plain English</b><small>"Which Kelmarsh turbines raised gear bearing alarms?"</small></div>
+<div class="xd-arrow">&darr;</div>
+<div class="xd-box llm"><b>2. assistant.py: the LLM writes the SPARQL</b><small>Prompt = rules + vocabulary read from vkg/ontology.ttl + example queries from queries/*.rq. The LLM never sees table names.</small><small>check(): SELECT only, right farm graph, LIMIT 50 or less. Errors or 0 rows go back to the LLM, up to 3 tries.</small></div>
+<div class="xd-arrow">&darr;<small>SPARQL</small></div>
+<div class="xd-box hub"><b>3. Fuseki hub (:3030)</b><small>One named graph per farm plus the shared fault catalogue. It runs the query and returns rows.</small></div>
+<div class="xd-arrow">&darr;<small>rows</small></div>
+<div class="xd-box llm"><b>4. The LLM writes a short answer from those rows only</b><small>Synthetic and curated demo records are labelled as such.</small></div>
+</div>
+<h3>Filled beforehand, not at question time (hub/build_hub.py)</h3>
+<div class="xd-lane">
+<div class="xd-row">
+<div class="xd-box src"><b>Farm A: PostgreSQL</b><small>then Ontop :8080 with vkg/mapping.obda. Table columns become RDF, e.g. status_events.message becomes wind:message.</small></div>
+<div class="xd-box src"><b>Farm B: PostgreSQL</b><small>then Ontop :8082 with farm_b/mapping.obda. Different tables, same wind-core terms.</small></div>
+<div class="xd-box src"><b>Farm C: Neo4j (fictional)</b><small>neo4j_farm_c.py exports it as RDF to build/hub/farm_c.ttl, with neo4j/fault_names.csv matching fault names.</small></div>
+</div>
+<div class="xd-arrow">&darr;<small>CONSTRUCT from each Ontop endpoint</small></div>
+<div class="xd-box"><b>SHACL gate (vkg/shapes.ttl)</b><small>A farm graph is loaded only if it conforms, otherwise the last good copy stays. Farm C skips this check.</small></div>
+<div class="xd-arrow">&darr;<small>loaded into the hub</small></div>
+</div>
+<p class="xd-note"><strong>Fallback:</strong> if the hub is down, farm A questions go straight to farm A's Ontop, which rewrites the SPARQL into SQL for PostgreSQL. SCADA time series never leave the farm, so use the "At the farm" panel for them.</p>
+<h3>Adding a new source</h3>
+<ul><li>CSV or SQL database: add a table and a mapping rule (or a new Ontop node, as farm B does), using the same wind: terms.</li><li>REST API: load it into PostgreSQL, or export RDF as neo4j_farm_c.py does.</li><li>Then add a shape in vkg/shapes.ttl if needed, an example under queries/, and re-run hub/build_hub.py.</li></ul>
+</div></dialog>
+<script>(function(){var d=document.getElementById("explain-dialog"),o=document.getElementById("explain-open"),c=document.getElementById("explain-close");if(!d||!o)return;
+o.addEventListener("click",function(){if(d.showModal){d.showModal()}else{d.setAttribute("open","")}});
+c.addEventListener("click",function(){d.close()});
+d.addEventListener("click",function(e){if(e.target===d){d.close()}});})();</script>
+"""
+
+
 def render(sparql="", columns=(), rows=None, reformulation="", relations=(), error=""):
     return render_page(sparql, columns, rows, reformulation, relations, error)
 
@@ -201,7 +262,7 @@ def render_page(sparql="", columns=(), rows=None, reformulation="", relations=()
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Wind knowledge graph</title><style>
 body{{margin:0;background:#f4f6f2;color:#17332b;font:16px/1.5 system-ui,sans-serif}}main{{max-width:1100px;margin:auto;padding:2rem 1rem 4rem}}h1{{font-size:1.9rem;margin:.2rem 0}}h2{{font-size:1.25rem;margin:1.5rem 0 .5rem}}small{{font-weight:400;color:#5b7067}}.lead{{color:#52685e;margin:.25rem 0 1.5rem}}form,section{{background:white;border:1px solid #d5dfd7;padding:1.25rem;margin:1rem 0}}label{{display:block;font-weight:700;margin-bottom:.5rem}}#ask-form{{border:0;padding:0;margin:0}}#question{{width:100%;box-sizing:border-box;padding:.7rem;font:inherit;border:1px solid #91a79b;border-radius:3px}}.reply{{font-size:1.05rem;background:#eef5ef;border-left:4px solid #175c45;padding:.75rem 1rem}}.warning{{color:#7a4b00;background:#fff4dc;padding:.5rem .75rem}}textarea{{width:100%;min-height:13rem;box-sizing:border-box;padding:.8rem;font:14px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;border:1px solid #91a79b;border-radius:3px;resize:vertical}}button{{margin-top:.75rem;padding:.65rem 1.3rem;background:#175c45;color:white;border:0;font:inherit;font-weight:700;cursor:pointer}}button:hover,button:focus-visible{{background:#0d4734}}.hint{{color:#5b7067;font-size:.9rem}}.error{{color:#9d2828;font-weight:700}}.scroll{{overflow:auto;max-height:26rem}}table{{border-collapse:collapse;font-size:.85rem;min-width:100%}}th,td{{padding:.5rem .65rem;border-bottom:1px solid #dce5de;text-align:left;vertical-align:top;overflow-wrap:anywhere}}th{{background:#ecf2ed;position:sticky;top:0}}.flow{{display:flex;flex-wrap:wrap;gap:.5rem;padding:0;list-style:none}}.flow li{{background:#e9f0e9;padding:.35rem .55rem}}.flow li+li::before{{content:'→ ';color:#175c45}}details{{margin-top:1rem}}summary{{cursor:pointer;font-weight:700}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#102c25;color:#e6f4e8;padding:1rem;max-height:30rem;overflow:auto;font-size:.78rem}}
 #journey[hidden],#live-answer[hidden]{{display:none}}.journey-scroll{{overflow-x:auto;padding:.5rem 0}}.journey-map{{width:1200px;height:120px;position:relative;display:grid;grid-template-columns:repeat(6,160px);gap:40px;padding:10px 20px;box-sizing:border-box}}.wires{{position:absolute;inset:0;width:1200px;height:120px;pointer-events:none}}.wire{{fill:none;stroke:#bdcbc1;stroke-width:4;stroke-linecap:round}}.wire.done{{stroke:#177454}}.wire.flowing{{stroke-dasharray:8 7;animation:travel .7s linear infinite}}@keyframes travel{{to{{stroke-dashoffset:-15}}}}.stage{{position:relative;z-index:1;margin:0;height:100px;padding:.55rem;background:#f4f6f2;color:#3c5d4c;border:2px solid #bdcbc1;text-align:left;font-size:.84rem;line-height:1.25;cursor:pointer}}.stage strong{{display:block;font-size:.95rem;color:#18382c;margin:.3rem 0}}.stage.done{{background:#e8f5eb;border-color:#177454}}.stage.current{{outline:3px solid #eabf54;outline-offset:2px}}.stage.waiting{{border-style:dashed}}.journey-controls{{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}}.journey-controls button{{margin:0;background:#e8f0e9;color:#174a35;border:1px solid #9dbda8}}.journey-controls button:disabled{{opacity:.5;cursor:not-allowed}}.evidence{{border-left:4px solid #177454;background:#f8faf7;padding:1rem;margin-top:1rem}}.evidence h3{{margin:.1rem 0 .5rem;font-size:1.05rem}}.evidence p{{margin:.35rem 0}}.evidence ul{{margin:.4rem 0;padding-left:1.3rem}}.evidence li{{margin:.25rem 0}}.evidence pre{{margin:.5rem 0}}mark{{background:#f8de91;color:#17332b;padding:0 .1rem}}.badge{{display:inline-block;background:#dff0e3;color:#16573b;padding:.1rem .4rem;margin:.15rem .3rem .15rem 0}}.warning{{background:#fff2dc;border-left:4px solid #a86000;padding:.55rem .8rem}}.explain{{margin-top:.7rem}}.story{{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding:0;list-style:none;margin:0 0 1rem}}.story li{{background:white;border:1px solid #d5dfd7;border-left:4px solid #175c45;padding:.6rem .8rem;font-size:.92rem}}.story li+li{{border-left-color:#8a5a00}}.tabs{{display:flex;gap:.25rem;border-bottom:2px solid #175c45;flex-wrap:wrap}}.tabs button{{margin:0;background:#e3ebe5;color:#17332b;border:1px solid #c2d1c6;border-bottom:0;padding:.6rem 1rem;text-align:left}}.tabs button small{{display:block;font-weight:400;color:#52685e;font-size:.8rem}}.tabs button[aria-selected=true]{{background:#175c45;color:white}}.tabs button[aria-selected=true] small{{color:#d6eadd}}.panel{{margin-top:0;border-top:0}}.panel[hidden]{{display:none}}.service{{padding:.45rem .75rem;margin:0 0 1rem;background:#eef2ee}}.service.ok{{background:#e5f3e8;border-left:4px solid #177454}}.service.degraded{{background:#fff4dc;border-left:4px solid #a86000}}.service.down{{background:#fbe6e6;border-left:4px solid #9d2828}}.examples button{{margin:.2rem .3rem 0 0;padding:.3rem .6rem;background:#eef5ef;color:#175c45;border:1px solid #9dbda8;font-weight:400;font-size:.88rem}}.ask-form{{border:0;padding:0;margin:0}}.ask-form input{{width:100%;box-sizing:border-box;padding:.7rem;font:inherit;border:1px solid #91a79b;border-radius:3px}}#at-the-farm{{margin-top:1.5rem;border-top:1px solid #d5dfd7;padding-top:1rem}}#at-the-farm form,#at-the-farm section{{margin:.75rem 0}}#farm-graphs table{{margin-bottom:1rem}}.scope{{border:0;padding:0;margin:.6rem 0 0;display:flex;gap:1.2rem;flex-wrap:wrap}}.scope legend{{font-weight:700;padding:0;float:left;margin-right:1rem}}.scope label{{display:inline;font-weight:400;margin:0}}.scope input{{width:auto;margin-right:.3rem}}.examples{{margin:.6rem 0 0}}@media(max-width:700px){{.story{{grid-template-columns:1fr}}}}@media(prefers-reduced-motion:reduce){{.wire.flowing{{animation:none}}}}
-</style><script defer src="/workbench.js"></script></head><body><main>
+</style><style>{EXPLAIN_CSS}</style><script defer src="/workbench.js"></script></head><body>{EXPLAIN_HTML}<main>
 <h1>Wind-energy knowledge graph</h1>
 <p class="lead">One question box for both use cases. Ask in plain English: the language model writes a read-only SPARQL query for the hub, and every fact in the reply comes from the rows the graph returns.</p>
 <ol class="story" aria-label="How the data is arranged">

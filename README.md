@@ -27,6 +27,67 @@ The page shows which scope was used and why, and offers example chips for both u
 | Farm B node (Penmanshiel, 14 turbines) | PostgreSQL `db-b` → Ontop :8082 | real 2016 SCADA + alarms; synthetic work orders; *different local schema* |
 | Farm C (optional, Neo4j) | Neo4j :7474 → exported into the hub | the team lead's fictional Cypher example |
 
+## How a question is answered, step by step
+
+Written for someone new to RDF. The same picture is in the web app: click **Explanation** at the top right of the page.
+
+```mermaid
+flowchart TB
+  ASK(["1. Engineer asks in plain English"])
+  subgraph ASSIST["2. assistant.py: the LLM writes the SPARQL"]
+    PROMPT["System prompt = rules<br/>+ vocabulary read from vkg/ontology.ttl<br/>+ example queries from queries/*.rq<br/>(the LLM never sees table names)"]
+    LLM["LLM (Gemini or Groq) writes a SELECT query"]
+    GUARD["check(): SELECT only · right GRAPH · LIMIT 50 or less<br/>errors or 0 rows go back to the LLM (up to 3 tries)"]
+    PROMPT --> LLM --> GUARD
+  end
+  HUB["3. Fuseki hub :3030<br/>one named graph per farm + shared fault catalogue<br/>runs the SPARQL and returns rows"]
+  ANS(["4. LLM writes a short answer from the returned rows only<br/>synthetic_demo and curated_demo records are labelled"])
+  ASK --> PROMPT
+  GUARD --> HUB --> ANS
+
+  subgraph BEFORE["Filled beforehand, not at question time: hub/build_hub.py"]
+    direction LR
+    PGA[("PostgreSQL farm A")] -- "SQL over JDBC" --> OPA["Ontop :8080<br/>vkg/mapping.obda / mapping.ttl<br/>table columns become RDF"]
+    PGB[("PostgreSQL farm B")] -- "SQL over JDBC" --> OPB["Ontop :8082<br/>farm_b/mapping.obda"]
+    NEO[("Neo4j farm C, fictional")] -- "Cypher" --> EXP["neo4j_farm_c.py<br/>+ neo4j/fault_names.csv"]
+    OPA -- "CONSTRUCT" --> SH{"SHACL gate<br/>vkg/shapes.ttl"}
+    OPB -- "CONSTRUCT" --> SH
+    EXP -- "farm_c.ttl, not SHACL-checked" --> HUBLOAD["hub.trig"]
+    SH -- "only if it conforms" --> HUBLOAD
+  end
+  HUBLOAD -. "loaded into" .-> HUB
+  HUB -. "hub down: farm A question goes straight to" .-> OPA
+```
+
+The same flow as plain text:
+
+```
+ "Which Kelmarsh turbines raised gear-bearing alarms?"
+        |
+ [1] assistant.py builds the prompt:  rules + vocabulary (vkg/ontology.ttl) + example queries (queries/*.rq)
+        |  LLM writes SPARQL  ->  check(): SELECT only, right GRAPH, LIMIT <= 50
+        v
+ [2] Fuseki hub :3030  (build/hub/hub.trig, made by hub/build_hub.py)
+        |  one named graph per farm + shared fault catalogue  ->  rows
+        v
+ [3] LLM writes 2-4 sentences from those rows only
+
+ Filled beforehand (not at question time):
+   PostgreSQL --SQL/JDBC--> Ontop (mapping.obda: table columns -> wind-core RDF)
+        --CONSTRUCT--> SHACL gate (vkg/shapes.ttl) --only if it conforms--> hub
+   Neo4j --Cypher--> neo4j_farm_c.py --> build/hub/farm_c.ttl --> hub (not SHACL-checked)
+
+ Fallback: hub down -> farm A questions go straight to Ontop -> PostgreSQL.
+```
+
+What to know:
+
+- **Where the LLM gets its terms.** `assistant.py` (`system_prompt` and `vocabulary`) reads `vkg/ontology.ttl` and pastes one line per term into the prompt. Add a term to the ontology and the LLM sees it on the next run.
+- **What a mapping rule is.** A target (the RDF to produce, with `{column}` placeholders) plus a source (the SQL that produces those columns). Example: rule `events` in `vkg/mapping.obda` makes `wind:message` from `status_events.message`.
+- **Hub versus farm.** The hub holds a validated copy of each farm's events, diagnoses and maintenance records, taken when you run `hub/build_hub.py`. SCADA time series stay at the farm and are queried through the "At the farm" panel.
+- **Adding a source.** Map it to the same `wind:` terms (a new table plus mapping rule for CSV or SQL, a new Ontop node for another database, a loader or RDF export for a REST API), add a shape in `vkg/shapes.ttl` if it brings a new kind of record, add an example query under `queries/`, then re-run `hub/build_hub.py`.
+- **Farm C is demo data.** The Neo4j graph in `neo4j/farm_c.cypher` is fictional (2 turbines, 2 alarms, 2 faults, 2 maintenance events) and is exported as a copy, so it goes stale until you re-run the export.
+
 Architecture (source: [docs/architecture.mmd](docs/architecture.mmd); GitHub and VS Code render the block below):
 
 ```mermaid
