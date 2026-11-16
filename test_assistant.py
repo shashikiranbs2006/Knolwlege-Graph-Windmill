@@ -182,6 +182,14 @@ result = assistant.ask("What is the average power per farm, and which farm is hi
 assert result["tool"] == "farm_metric", "a reply that is not a tool choice must be retried, not sent to the hub"
 print("routing: a reply that answers the question instead of choosing a tool is retried")
 
+# An empty window states the dataset's covered date range (the data is historical, so "yesterday" has no readings).
+ranges = farm_metrics.data_ranges()
+assert ranges["kelmarsh"][1] >= "2016-12-01" and ranges["penmanshiel"][0] >= "2016-06-01", ranges
+script[:] = ['{"tool": "farm_metric", "metric": "Power", "agg": "avg", "farms": ["kelmarsh"], "start": "2026-11-14", "end": "2026-11-15"}']
+reply = assistant.ask("What was the average power at Kelmarsh yesterday?", "farm")
+assert reply["rows"] == [] and "covers 2016-" in reply["answer"], reply["answer"]
+print("empty window: the answer states the dataset's covered date range")
+
 # 5. Unsafe or out-of-scope queries are refused.
 farm_b = "SELECT * WHERE { GRAPH <https://w3id.org/wind-core/data/graph/penmanshiel> { ?s ?p ?o } } LIMIT 5"
 for bad, scope in (("DELETE WHERE { ?s ?p ?o }", "farm"), ("SELECT * WHERE { SERVICE <http://evil/> { ?s ?p ?o } }", "cross"),

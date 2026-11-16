@@ -20,6 +20,7 @@ silently dropped. Merging refuses unequal units.
 import csv
 import os
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -91,6 +92,33 @@ def aggregate_query(p):
 RATED_QUERY = PREFIXES + "SELECT (AVG(?r) AS ?rated) WHERE { ?t a wind:WindTurbine ; wind:ratedPowerKW ?r }"
 
 
+RANGE_QUERY = PREFIXES + "SELECT (MIN(?t) AS ?first) (MAX(?t) AS ?last) WHERE { ?o sosa:resultTime ?t }"
+_ranges = {}  # farm id -> (fetched_at, (first_date, last_date)) so the range is not asked on every question
+
+
+def data_range(farm):
+    """First and last day (YYYY-MM-DD) with readings at this farm, or None if it cannot be read. Cached for 10 minutes."""
+    now = time.monotonic()
+    cached = _ranges.get(farm["farm_id"])
+    if cached and now - cached[0] < 600:
+        return cached[1]
+    try:
+        rows = assistant.run_sparql(RANGE_QUERY, farm[ENDPOINT_COLUMN], timeout=min(15.0, float(farm.get("timeout_s") or 15)))[1]
+        found = (rows[0]["first"][:10], rows[0]["last"][:10]) if rows and rows[0]["first"] else None
+    except Exception:  # an unreachable farm must not break the question
+        return None
+    _ranges[farm["farm_id"]] = (now, found)
+    return found
+
+
+def data_ranges(farms=None):
+    """{farm id: (first, last)} for every registry farm that answers, read in parallel."""
+    farms = farms or registry()
+    with ThreadPoolExecutor(max_workers=max(1, len(farms))) as pool:
+        found = list(pool.map(data_range, farms.values()))
+    return {fid: r for fid, r in zip(farms, found) if r}
+
+
 def unit_name(iri):
     tail = iri.rsplit("/", 1)[-1]
     return UNIT_NAMES.get(tail, tail)
@@ -122,7 +150,12 @@ def one_farm(farm, params):
     for row in rows[: int(farm.get("max_rows") or 50)]:
         out.append({**base, **{k: v for k, v in row.items() if k in ("turbine", "month")},
                     "unit": unit_name(row["unit"]), "value": round(float(row["value"]), 2), "readings": int(float(row["readings"]))})
-    return {**base, "status": "ok" if out else "no_data", "detail": "no readings in that window" if not out else "",
+    detail = ""
+    if not out:
+        span = data_range(farm)
+        detail = (f"{farm['name']} has no readings in that window. Its data covers {span[0]} to {span[1]}"
+                  if span else f"{farm['name']} has no readings in that window")
+    return {**base, "status": "ok" if out else "no_data", "detail": detail,
             "rows": out, "rated_kw": rated, "sparql": query, "endpoint": endpoint}
 
 
@@ -141,7 +174,7 @@ def farm_metric(params, farms=None):
                 r["rows"][0]["capacity_factor"] = round(r["rows"][0]["value"] / r["rated_kw"], 3)
     rows = [row for r in answered for row in r["rows"]]
     missing = [{"farm": r["farm"], "name": r["name"], "status": r["status"], "detail": r["detail"]}
-               for r in results if r["status"] != "ok"]
+               for r in results if r["status"] != "ok"]  # includes no_data, with the farm's covered date range
     caveats = []
     units = {row["unit"] for row in rows}
     if len(units) > 1:  # never merge unequal units

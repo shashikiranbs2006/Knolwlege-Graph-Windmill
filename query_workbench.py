@@ -214,6 +214,13 @@ EXPLAIN_CSS = """
 .xd-card{border:1px solid #d5dfd7;border-left:4px solid #175c45;background:#fafbf9;padding:.6rem .8rem;font-size:.9rem}
 .xd-card+.xd-card{border-left-color:#8a5a00}
 .xd-body .service{margin:.3rem 0;font-size:.9rem}
+.xd-split{display:grid;grid-template-columns:1.4fr 1fr;gap:.75rem;align-items:start}
+.xd-col{border:2px solid #1f4f8f;background:#f1f6fc;padding:.5rem .8rem .7rem;font-size:.88rem}
+.xd-col.livecol{border:4px double #0b7a55;background:#e9f7f0}
+.xd-col h4{margin:.1rem 0 .3rem;font-size:1rem}
+.xd-col h4 small{display:block;font-weight:400;color:#52685e}
+.xd-col ul{margin:.2rem 0;padding-left:1.1rem}.xd-col li{margin:.35rem 0}
+@media(max-width:700px){.xd-split{grid-template-columns:1fr}}
 @media(max-width:700px){.xd-cards{grid-template-columns:1fr}}
 @media(max-width:700px){.xd-row{grid-template-columns:1fr}}
 """
@@ -227,6 +234,20 @@ EXPLAIN_HTML = """<button type="button" id="explain-open" class="explain-btn" ar
 <div class="xd-cards">
 <div class="xd-card"><strong>Data stays at the farm.</strong> Each farm keeps its own database and publishes it through its own Ontop endpoint, a virtual graph: nothing is copied at the farm. Only the validated hub is shared.</div>
 <div class="xd-card"><strong>The hub is shared.</strong> It holds one named graph per farm (harvested from that farm's Ontop endpoint and checked against the SHACL shapes before loading), plus curated alarm-to-fault knowledge with confidence scores as RDF 1.2 annotations. SCADA time series stay at the farm and are asked live.</div>
+</div>
+<h3>What the hub handles, and what the metric tool handles</h3>
+<div class="xd-split">
+<div class="xd-col hubcol"><h4>Handled by the hub <small>knowledge records</small></h4><ul>
+<li><strong>Turbines, components and which farm they belong to.</strong> Small, and cross-farm questions need them joined.</li>
+<li><strong>Alarms, faults, diagnoses and maintenance fixes.</strong> These are the cross-farm joins, and they ran about 12 times faster on the hub (0.2 s versus 2.5 s).</li>
+<li><strong>Curated alarm-to-fault rules, confidence scores and the shared fault catalogue.</strong> This knowledge lives only at the hub.</li>
+<li><strong>Farm registry, and who publishes or withholds what (governance).</strong> Access rules and the SHACL check run once in one place.</li>
+<li><strong>Farm C (Neo4j) fault names.</strong> They are exported into the hub because the metric tool does not cover farm C yet.</li>
+<li><strong>Questions when a farm is offline.</strong> The hub answers alone from its last good copy.</li></ul></div>
+<div class="xd-col livecol"><h4>Handled by the metric tool <small>live farm queries</small></h4><ul>
+<li><strong>Power, wind speed and other sensor readings, and their averages per farm, turbine or month.</strong> They are millions of rows, too big to copy, and copying them would break the "raw data stays at the farm" promise.</li>
+<li><strong>Anything that must be fresh to the second.</strong> The hub copy can be out of date.</li>
+<li><strong>Farm A-only questions with no hub data.</strong> Farm A's own Ontop can answer them directly.</li></ul></div>
 </div>
 <h3>How a question is answered</h3>
 <p>New to RDF? An <strong>ontology</strong> is the shared list of terms (turbine, alarm, fault). A <strong>mapping</strong> says which database column makes which term. <strong>SPARQL</strong> is the query language over those terms. The assistant writes the SPARQL for you.</p>
