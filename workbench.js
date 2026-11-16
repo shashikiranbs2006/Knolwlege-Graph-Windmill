@@ -242,6 +242,7 @@ async function checkServices() {
     data = await response.json();
   } catch (error) {
     for (const line of [farmLine, crossLine]) { line.textContent = "The site could not check its services."; line.className = "service down"; }
+    setPill("down", "Services unreachable");
     return;
   }
   const farm = data.scopes.farm;
@@ -267,7 +268,18 @@ async function checkServices() {
     crossLine.textContent = data.hub.ok ? "All farms: the hub is online but holds no farm graph yet. Run the hub build." : "All farms: the hub is unavailable, so cross-farm questions cannot be answered right now. Farm A questions still work at the farm.";
     crossLine.className = "service down";
   }
+  const states = [farmLine.className, crossLine.className];
+  if (states.every(c => c.includes("ok"))) setPill("ok", "All services online");
+  else if (states.some(c => c.includes("down")) && !states.some(c => c.includes("ok"))) setPill("down", "Services down");
+  else setPill("degraded", "Some services limited");
 }
+function setPill(state, text) {
+  const pill = document.querySelector("#status-pill");
+  if (!pill) return;
+  pill.dataset.state = state;
+  pill.textContent = text;
+}
+document.querySelector("#status-pill")?.addEventListener("click", () => document.querySelector("#explain-open")?.click());
 checkServices();
 
 // ---------- One question box; scope is auto-detected unless a chip is chosen ----------
