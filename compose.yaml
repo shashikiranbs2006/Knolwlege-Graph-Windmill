@@ -57,8 +57,10 @@ services:
       HUB_ENDPOINT: http://hub:3030/hub/sparql
       FARM_A_ENDPOINT: http://ontop:8080/sparql
       FARM_A_GRAPH: https://w3id.org/wind-core/data/graph/kelmarsh
+      FARMS_CSV: /app/farms.csv
       ASSISTANT_EXAMPLES: /queries
       LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_API_KEYS: ${LLM_API_KEYS:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
       LLM_MODEL: ${LLM_MODEL:-gemini-flash-latest}
     ports:
@@ -67,6 +69,8 @@ services:
       - ./query_workbench.py:/app/query_workbench.py:ro
       - ./workbench.js:/app/workbench.js:ro
       - ./assistant.py:/app/assistant.py:ro
+      - ./farm_metrics.py:/app/farm_metrics.py:ro
+      - ./hub/farms.csv:/app/farms.csv:ro
       - ./queries:/queries:ro
       - ./vkg:/input:ro
       - ./db/schema.sql:/db/schema.sql:ro

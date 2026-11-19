@@ -31,7 +31,9 @@ flowchart TB
     NEO[("Neo4j")] --> EXP["neo4j_farm_c.py<br/>export to wind-core"]
   end
   USER --> SITE
-  LLM -- "SPARQL" --> HUB
+  LLM -- "knowledge: SPARQL" --> HUB
+  LLM -- "measurements: farm_metric parameters" --> FM["farm_metrics.py<br/>validated aggregate per farm, parallel,<br/>names a farm that is offline"]
+  FM -- "live aggregate (AVG/COUNT as SQL)" --> OA & OB
   LLM -. "fallback if the hub is down<br/>(farm A questions only, at the farm)" .-> OA
   T1 -. "at-the-farm panel:<br/>SPARQL → mapping → SQL journey" .-> OA
   OA -- "harvest (assets, events,<br/>diagnoses, maintenance)" --> BUILD
