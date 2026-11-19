@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Hub architecture options: wind knowledge graph</title>
+<style>
+@page { size: A4; margin: 14mm 13mm; }
+:root{--ink:#1f2430;--mut:#5b6472;--line:#dfe3ea;--bg:#f6f7fa;--g:#e9f4ef;--gb:#4f9c82;--y:#fbf3df;--yb:#c99a2e;--b:#eceefa;--bb:#7078b8;--r:#fbe9e7;--rb:#c9604f}
+*{box-sizing:border-box}
+body{font:10.2pt/1.45 "Inter","Segoe UI",Arial,sans-serif;color:var(--ink);margin:0}
+h1{font-size:21pt;margin:0 0 4px}
+h2{font-size:14pt;margin:22px 0 6px;break-after:avoid}
+h3{font-size:11.2pt;margin:0 0 4px}
+p{margin:5px 0}
+.lede{color:var(--mut);font-size:10.6pt;max-width:175mm}
+.box{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--bg);margin:10px 0}
+.box.g{background:var(--g);border-color:var(--gb)}
+.box.y{background:var(--y);border-color:var(--yb)}
+.box.r{background:var(--r);border-color:var(--rb)}
+table{border-collapse:collapse;width:100%;font-size:8.6pt;margin:8px 0}
+th,td{border:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top}
+th{background:var(--bg)}
+td.k{font-weight:600;white-space:nowrap}
+.opt{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0;break-inside:avoid}
+.opt dl{display:grid;grid-template-columns:92px 1fr;gap:3px 10px;margin:6px 0 0;font-size:9.4pt}
+.opt dt{color:var(--mut);font-weight:600}
+.opt dd{margin:0}
+.tag{display:inline-block;font-size:8pt;border-radius:10px;padding:1px 8px;margin-left:6px;border:1px solid}
+.t-rec{background:var(--g);border-color:var(--gb)}.t-ok{background:var(--y);border-color:var(--yb)}.t-no{background:var(--r);border-color:var(--rb)}
+code{font:8.8pt Consolas,monospace;background:#eef0f4;padding:0 3px;border-radius:3px}
+.src li{font-size:8.6pt;margin:2px 0;word-break:break-word}
+a{color:#2f52a3}
+.pb{break-before:page}
+ol,ul{margin:4px 0 4px 18px;padding:0}
+.small{font-size:8.8pt;color:var(--mut)}
+</style></head><body>
+
+<h1>Where should the hub get its data? Options for the wind knowledge graph</h1>
+<p class="lede">Research report, 15 Nov 2026. Question: should the hub keep <b>copying</b> each farm's knowledge records (today), or become a <b>virtual / federated</b> router that sends each question to the farms and merges the answers? Based on the code in this folder, the git history and earlier session logs, measurements on the running stack, and published sources (links at the end). Nothing in the project was changed.</p>
+
+<div class="box g">
+<h3>Short answer</h3>
+<p><b>Neither pure design is right.</b> The current hub is a good design for <i>knowledge</i> (turbines, alarms, diagnoses, repairs, governance) and a poor one for <i>measurements</i> (power, wind speed). Your federated idea is the right idea for measurements, and the wrong one for knowledge. The best answer is a <b>hybrid</b>: keep the validated hub for knowledge, and add a small <b>farm-query path</b> that sends one safe aggregate query to each farm's Ontop and merges the numbers. The LLM chooses between the two as <i>tools</i>, instead of writing federated SPARQL itself.</p>
+<p>This is cheap here. On your running stack, "average power per farm" through SPARQL <code>SERVICE</code> from the hub returned the right numbers (Kelmarsh 515 kW, Penmanshiel 527 kW) in <b>0.6 s</b>. The same question fails today only because the assistant is forbidden to use <code>SERVICE</code> and the hub holds no observations.</p>
+</div>
+
+<h2>1. What the project does today (confirmed in the code)</h2>
+<ul>
+<li><b>Farms.</b> Each farm has its own PostgreSQL and its own Ontop mapping to the shared wind-core vocabulary (<code>vkg/mapping.obda</code>, <code>farm_b/mapping.obda</code>). Farm C is a fictional Neo4j graph exported to a file by <code>neo4j_farm_c.py</code>.</li>
+<li><b>Hub.</b> <code>hub/build_hub.py</code> runs one SPARQL <code>CONSTRUCT</code> per class on each farm's Ontop, validates the result with SHACL, and writes one named graph per farm into <code>hub.trig</code> (about 207k triples for Kelmarsh, 239k for Penmanshiel, 76 MB file). If a farm is down, the last good snapshot stays. Observations (the SCADA readings) are deliberately <b>not</b> harvested.</li>
+<li><b>Registry.</b> <code>hub/farms.csv</code> lists endpoint, what each farm exposes and withholds, as free text. The code does not yet use it to route anything.</li>
+<li><b>Assistant.</b> <code>assistant.py</code> sends the question and an ontology summary to the LLM, which writes one SELECT. Code checks it (SELECT only, LIMIT 50, <code>SERVICE</code> and <code>FROM</code> forbidden, farm scope enforced) and runs it on the hub only. Scope (one farm or all) is guessed from wording by <code>detect_scope</code>.</li>
+</ul>
+<h3>Why the earlier SERVICE version was replaced</h3>
+<p>Git history starts after the switch (the first commit already has the hub), so I used the earlier session logs. An earlier build did use <code>SERVICE &lt;ontop&gt; {…}</code> blocks written by the LLM, with a prompt listing the farm endpoints. On 14 Nov a request merged two sites into one hub with <b>one named graph per farm</b>. The assistant's reasoning then was: <code>SERVICE</code> cannot produce named graphs, Fuseki has no virtual named graphs, and SHACL checking, farm-down resilience and a single place for curated RDF 1.2 annotations all needed a local copy. The observations were left out because of size (~314k readings per farm-year at the time). <b>I found no record that federation was slow or failed.</b> It was a design choice (scoping, validation, availability), not a measured failure. That matters, because the measurements below show the choice was right for knowledge and unnecessary for aggregates.</p>
+
+<h2>2. What I measured (read-only queries on the running stack)</h2>
+<table>
+<tr><th>Test</th><th>Result</th><th>Reading</th></tr>
+<tr><td>Average power per farm, asked directly on each farm's Ontop</td><td>0.23 to 0.33 s warm (1.8 to 2.5 s first call). Kelmarsh 515.0 kW over 285,693 readings; Penmanshiel 527.3 kW over 324,854</td><td>Ontop turns the aggregate into SQL <code>AVG</code>. Fast.</td></tr>
+<tr><td>Same, from the hub with the aggregate <b>inside</b> <code>SERVICE</code> (pushdown), both farms in one query</td><td>0.58 s warm (2.1 s cold). Same numbers</td><td>Federation works when each farm does the heavy lifting.</td></tr>
+<tr><td>Same, but aggregate <b>outside</b> <code>SERVICE</code> (hub pulls raw rows)</td><td>20.2 s. Same numbers</td><td>The typical federation trap: 35x slower, and grows with data.</td></tr>
+<tr><td>Alarm knowledge joined with Kelmarsh alarm events (7 rows, top count 118)</td><td>Federated 2.5 s; from the materialised graph 0.2 s</td><td>Materialising is about 12x faster for joins with curated knowledge, and the answers match.</td></tr>
+</table>
+<p class="small">Caveats: one machine, warm caches, a single Ontop per farm on localhost (no network latency), 2016 data only. Real farms across the internet will be slower for federation, not faster. Both farms are the same turbine class, so "which farm is highest" should be normalised by rated power or capacity factor before anyone trusts the ranking.</p>
+
+<h2 class="pb">3. All the options</h2>
+<p class="small">Scores: speed = typical question; effort = work in this codebase, in working days for one person; privacy = how much data leaves the farm.</p>
+
+<div class="opt"><h3>A. Current design: materialised knowledge hub <span class="tag t-ok">keep, extend</span></h3>
+<dl><dt>How</dt><dd>Harvest <code>CONSTRUCT</code> copies of non-time-series records into Fuseki, SHACL-gated, one graph per farm.</dd>
+<dt>Fit</dt><dd>Excellent for fault diagnosis and cross-farm repair learning. Poor for any question about measurements.</dd>
+<dt>Pros</dt><dd>Fast (0.2 s), works when a farm is down, SHACL gate, RDF 1.2 annotations in one place, easy for an LLM (one endpoint, GRAPH ?g pattern), easy to audit.</dd>
+<dt>Cons</dt><dd>Data goes stale until rebuilt (about 2 minutes by hand). A copy of records exists outside the farm. Needs a refresh job per farm. No measurements.</dd>
+<dt>Privacy</dt><dd>Medium. The farm controls what is mapped, but mapped records are copied. Withholding is by not mapping (farm B's crew names).</dd>
+<dt>Speed / effort</dt><dd>Fast / already done. A scheduled rebuild is about 1 day.</dd>
+<dt>Failure modes</dt><dd>Stale hub answers read as current (the registry shows harvest time, the answer text does not). One farm's schema change breaks the harvest, and the last snapshot hides it quietly.</dd></dl></div>
+
+<div class="opt"><h3>B. Pure federation with SPARQL 1.1 SERVICE (Jena/Fuseki) <span class="tag t-ok">use for measurements</span></h3>
+<dl><dt>How</dt><dd>The hub keeps only ontology, registry and curated knowledge. Queries contain <code>SERVICE &lt;farm&gt; {…}</code> blocks per farm (W3C SPARQL 1.1 Federated Query).</dd>
+<dt>Fit</dt><dd>Matches your proposal. Measured above: good with pushdown, bad without.</dd>
+<dt>Pros</dt><dd>No copy. Always live. Already in Jena. Farms keep full control of their endpoint.</dd>
+<dt>Cons</dt><dd>The hub engine has no statistics about the farms and may pull raw rows (20 s case). All farms must be up. The LLM must write correct per-farm blocks, which is harder than one graph. No SHACL gate. Joins with hub knowledge cost 12x more.</dd>
+<dt>Privacy</dt><dd>Best of the SPARQL options: only results travel, but the hub can ask any question the endpoint allows, so each endpoint needs authentication and a query allow-list.</dd>
+<dt>Speed / effort</dt><dd>Fast for pushed aggregates, slow otherwise / 2 to 4 days if done through templates, more if the LLM writes it.</dd>
+<dt>Failure modes</dt><dd>One slow farm stalls the answer; <code>SERVICE SILENT</code> hides a missing farm and gives a wrong "all farms" answer; unbounded <code>SERVICE</code> from LLM text is also an SSRF path, so the current ban is sensible.</dd></dl></div>
+
+<div class="opt"><h3>C. Smarter federation engines (Comunica, RDF4J FedX, Semagrow) <span class="tag t-ok">maybe later</span></h3>
+<dl><dt>How</dt><dd>A federation engine does source selection and join ordering. FedX sends <code>ASK</code> queries to find which source has which pattern, groups patterns that hit one source, and uses bind joins. Semagrow uses VoID statistics. Comunica 3.0 added source grouping, bound joins and pruning of empty sources.</dd>
+<dt>Fit</dt><dd>Only worth it if you have many endpoints and unpredictable queries. With 2 to 5 farms and a known vocabulary, the gain over hand-pushed <code>SERVICE</code> is small. Several of these are research-grade; I found no recent release notes for Semagrow, so verify before depending on it.</dd>
+<dt>Pros</dt><dd>Automatic pushdown and join ordering. FedX is a drop-in part of RDF4J.</dd>
+<dt>Cons</dt><dd>Another engine to run. Source selection costs extra requests. Ontop endpoints are slower to answer <code>ASK</code> probes than native triple stores. Still cannot gate with SHACL.</dd>
+<dt>Privacy / speed</dt><dd>Same as B / usually better than naive B, still behind materialised.</dd>
+<dt>Effort / failure</dt><dd>3 to 6 days to integrate and test / wrong source choice gives silent missing farms; benchmark claims are mostly from the projects' own papers.</dd></dl></div>
+
+<div class="opt"><h3>D. Ontop over a federated SQL layer (Trino, Dremio, Denodo, Teiid) <span class="tag t-no">not now</span></h3>
+<dl><dt>How</dt><dd>One Ontop at the hub maps to the shared ontology; below it Trino (or Dremio, Denodo, Teiid) exposes every farm's database as one SQL catalogue. SPARQL becomes SQL, and cross-farm joins become federated SQL. Ontop's guide lists these federators as supported (Trino since 5.0.2, Dremio since 4.1, Teiid since 4.1.1). An ITC case study federated PostgreSQL sources with Trino plus Ontop; it reports open issues in identity alignment, schema harmonisation, performance and governance. Optique at Statoil and Siemens used the same idea (OBDA over federated back ends) with its own engines, ExaStream for streams and Exareme for static data.</dd>
+<dt>Fit</dt><dd>Strong for one organisation with many databases. Weak for farms owned by different companies.</dd>
+<dt>Pros</dt><dd>One mapping layer and true SQL pushdown, including time series. Handles measurements well.</dd>
+<dt>Cons</dt><dd>Needs every farm to open a database connection to the hub, which removes the Ontop mapping as the governance boundary (Trino sees raw tables). Cross-source joins are the known cost. One more large service (Trino) to run. Farm C (Neo4j) is not covered.</dd>
+<dt>Privacy</dt><dd>Worst of the options: the hub holds credentials to every farm database.</dd>
+<dt>Speed / effort</dt><dd>Good for single-farm aggregates, uncertain for joins / 8 to 15 days plus security work.</dd>
+<dt>Failure modes</dt><dd>Hidden full-table scans, credential sprawl, a schema change at any farm breaks hub mappings.</dd></dl></div>
+
+<div class="opt"><h3>E. Commercial virtual graphs (Stardog, GraphDB) <span class="tag t-no">not now</span></h3>
+<dl><dt>How</dt><dd>Stardog maps relational data with R2RML and lets you choose per source whether to query live (virtual) or copy in. GraphDB advertises virtualisation beyond simple federation, and a community post says it embeds Ontop (I found no official page confirming this).</dd>
+<dt>Fit</dt><dd>Closest to the "switch per source" idea, in one product.</dd>
+<dt>Pros</dt><dd>Mixed virtual and materialised in one query engine; vendor support; Stardog reports large speedups for heterogeneous federation on its own blog.</dd>
+<dt>Cons</dt><dd>Licences and cost. Lock-in. A Stardog virtual graph on a non-Stardog SPARQL endpoint reportedly needed <code>SERVICE</code> instead. You would give up Ontop and Fuseki, which the research paper and the team lead follow.</dd>
+<dt>Privacy / speed / effort</dt><dd>Like D / good / 10+ days and a procurement decision.</dd></dl></div>
+
+<div class="opt"><h3>F. Hybrid: copy small knowledge, federate big measurements <span class="tag t-rec">recommended core</span></h3>
+<dl><dt>How</dt><dd>Keep option A for knowledge. Add a <b>farm-query path</b> for time series: Python code sends a parameterised aggregate (metric, farms, time window, group by) to each farm's Ontop, in parallel, with timeouts, then merges and labels the rows.</dd>
+<dt>Fit</dt><dd>Matches the data: knowledge is small, validated and joined a lot; measurements are large, change daily, and mostly asked as aggregates.</dd>
+<dt>Pros</dt><dd>Uses what already works. Measured at about 0.6 s. Raw readings never leave the farm; only the aggregate does. A farm that is down is reported by name, not hidden.</dd>
+<dt>Cons</dt><dd>Two paths to maintain. Some questions need both (for example "alarms at times of high temperature across farms"); those need a join in code or a materialised aggregate (option G).</dd>
+<dt>Privacy</dt><dd>Good. The aggregate template is the policy: it can refuse per-turbine detail, small groups, or withheld signals.</dd>
+<dt>Speed / effort</dt><dd>Fast / about 4 to 6 days (gateway, templates, registry columns, tests).</dd>
+<dt>Failure modes</dt><dd>Different units or sampling between farms (kW vs MW, 10-minute vs 1-minute) give a wrong comparison; handled by checking <code>wind:unit</code> in the result and refusing to merge unequal units.</dd></dl></div>
+
+<div class="opt"><h3>G. Materialise aggregates into the hub <span class="tag t-ok">add when needed</span></h3>
+<dl><dt>How</dt><dd>Harvest daily (or hourly) per-turbine means, maxima and counts per signal as <code>wind:Aggregate</code> records. About 30k rows a year for 20 turbines and 4 signals at daily resolution (about 700k hourly).</dd>
+<dt>Fit</dt><dd>Covers the common "compare farms over a year" and "trend before a fault" questions in the same graph as the knowledge, so joins are fast and SHACL applies.</dd>
+<dt>Pros</dt><dd>One endpoint answers everything the daily resolution supports; works when a farm is down.</dd>
+<dt>Cons</dt><dd>Stale by a day. Fine detail (a single gust, 10-minute spikes) is lost. Needs an aggregate view in each farm's SQL and a shape in SHACL.</dd>
+<dt>Privacy / effort</dt><dd>Medium (derived, not raw) / 3 to 4 days.</dd></dl></div>
+
+<div class="opt"><h3>H. LLM-side routing <span class="tag t-rec">recommended for the assistant</span></h3>
+<dl><dt>Three variants</dt><dd>
+<b>(1) Tools per capability.</b> The LLM gets tools such as <code>query_hub(sparql)</code> and <code>farm_metric(metric, agg, farms, window)</code>; the code does the fan-out. <b>(2) Text-to-SPARQL against a federated endpoint</b> (the LLM writes <code>SERVICE</code> blocks, your earlier design). <b>(3) LLM plans sub-queries</b>, one per farm, then a merge step.</dd>
+<dt>Evidence</dt><dd>Agentic SPARQL (2026) evaluated LLM agents using SPARQL via MCP on a federated benchmark and reports that endpoint discovery and source selection remain hard and often produce slow queries; source metadata catalogues are largely missing. A multi-agent KBQA paper (AMA-KBQA) shows that onboarding a new graph can be just a wrapper, but its prototype commits to one route per question.</dd>
+<dt>Verdict</dt><dd>Variant 1 is the safest: a typed tool call cannot leak a query to an unregistered endpoint, farm selection comes from the registry, and each farm's limits are enforced in code. Variant 3 is the next step once variant 1 works. Variant 2 has the highest failure rate and the weakest security, so keep the ban on <code>SERVICE</code> in LLM text.</dd></dl></div>
+
+<div class="opt"><h3>I. Data spaces (Eclipse Dataspace Components, IDSA, Gaia-X) <span class="tag t-no">later, if farms are different companies</span></h3>
+<dl><dt>How</dt><dd>Each farm runs a connector that publishes a catalogue and enforces usage policy; the hub negotiates a contract before each transfer. EDC is open source and implements the IDSA Dataspace Protocol and Gaia-X trust framework; it includes a Federated Catalog and identity hub.</dd>
+<dt>Fit</dt><dd>It solves <i>who may ask what</i>, not <i>how to query</i>. It would wrap options B or F, not replace them. I found no wind-specific dataspace in my search. A 2023 survey found documentation of the open-source connectors poor.</dd>
+<dt>Effort</dt><dd>Weeks, with an identity and policy decision first. Out of scope for the pitch.</dd></dl></div>
+
+<div class="opt"><h3>J. Neo4j and other graph farms in the federation</h3>
+<dl><dt>Options</dt><dd>(a) Today: export to RDF and load (stale, not SHACL-checked). (b) Same export but through the harvest path: run the exporter inside the build, validate with SHACL (RDF 1.2 annotations are the obstacle; flatten confidence onto Diagnosis nodes as farms A and B do). (c) A small <b>adapter</b> exposing the same <code>farm_metric</code> tool, implemented with a Cypher template; no SPARQL needed. (d) neosemantics (n10s) inside Neo4j to speak RDF. (e) Ontop over Neo4j's JDBC SQL-to-Cypher translator: Ontop does not support Neo4j, so that is research only.</dd>
+<dt>Pick</dt><dd>(b) for knowledge, (c) for measurements. Both fit the recommended design; (e) does not exist as a supported path.</dd></dl></div>
+
+<h2 class="pb">4. Comparison</h2>
+<table>
+<tr><th>Option</th><th>Measurements</th><th>Knowledge joins</th><th>Speed</th><th>Farm down</th><th>Privacy</th><th>Effort</th><th>Neo4j / API fit</th><th>Verdict</th></tr>
+<tr><td class="k">A Materialised hub (today)</td><td>No</td><td>Excellent</td><td>0.2 s</td><td>Works (stale)</td><td>Medium</td><td>Done</td><td>Export</td><td>Keep for knowledge</td></tr>
+<tr><td class="k">B SERVICE federation</td><td>Good if pushed down</td><td>Weak (12x slower)</td><td>0.6 s to 20 s</td><td>Fails or silent gap</td><td>Good</td><td>2 to 4 d</td><td>Needs SPARQL facade</td><td>Use inside tools</td></tr>
+<tr><td class="k">C FedX / Comunica / Semagrow</td><td>Good</td><td>Fair</td><td>Medium</td><td>Fails</td><td>Good</td><td>3 to 6 d</td><td>Needs facade</td><td>Later, if many farms</td></tr>
+<tr><td class="k">D Ontop on Trino etc.</td><td>Good</td><td>Fair</td><td>Medium</td><td>Fails</td><td>Poor</td><td>8 to 15 d</td><td>Neo4j no</td><td>Not now</td></tr>
+<tr><td class="k">E Stardog / GraphDB</td><td>Good</td><td>Good</td><td>Good</td><td>Mixed</td><td>Medium</td><td>10+ d, cost</td><td>Partial</td><td>Not now</td></tr>
+<tr><td class="k">F Hybrid, tool routing</td><td>Good</td><td>Excellent</td><td>0.2 to 0.6 s</td><td>Partial, named</td><td>Good</td><td>4 to 6 d</td><td>Adapter per source</td><td><b>Recommended</b></td></tr>
+<tr><td class="k">G Materialised aggregates</td><td>Daily detail</td><td>Excellent</td><td>0.2 s</td><td>Works</td><td>Medium</td><td>3 to 4 d</td><td>Export</td><td>Add in phase 3</td></tr>
+<tr><td class="k">H LLM routing (tools)</td><td>n/a</td><td>n/a</td><td>+1 LLM call</td><td>n/a</td><td>Good</td><td>part of F</td><td>Per-source tool</td><td><b>Recommended</b></td></tr>
+<tr><td class="k">I Data space</td><td>n/a</td><td>n/a</td><td>Slower</td><td>n/a</td><td>Best</td><td>Weeks</td><td>Connector</td><td>Later</td></tr>
+</table>
+
+<h2>5. Recommendation and plan</h2>
+<h3>Ranked</h3>
+<ol>
+<li><b>F + H: hybrid with tool-based routing.</b> Knowledge stays on the validated hub; measurements go through a farm-query tool.</li>
+<li><b>G on top:</b> daily aggregates on the hub for fast, offline-safe trends.</li>
+<li><b>B as the engine inside the tool</b> (or direct HTTP to each Ontop). Not exposed to LLM text.</li>
+<li>C, then I, only if the number of farms or companies grows. D and E: skip for this project.</li>
+</ol>
+
+<svg viewBox="0 0 760 400" width="100%" style="margin:8px 0;break-inside:avoid" font-family="Segoe UI,Arial,sans-serif" font-size="10">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#5b6472"/></marker></defs>
+<g stroke-width="1.2">
+<rect x="10" y="150" width="110" height="46" rx="8" fill="#f6f7fa" stroke="#9aa3b2"/><text x="65" y="170" text-anchor="middle">Engineer asks</text><text x="65" y="184" text-anchor="middle" fill="#5b6472">plain English</text>
+<rect x="150" y="120" width="150" height="106" rx="8" fill="#eceefa" stroke="#7078b8"/><text x="225" y="140" text-anchor="middle" font-weight="600">Assistant (LLM)</text><text x="225" y="158" text-anchor="middle">picks tools, never writes</text><text x="225" y="172" text-anchor="middle">SERVICE or raw endpoints</text><text x="225" y="192" text-anchor="middle" fill="#5b6472">farm choice from registry</text><text x="225" y="206" text-anchor="middle" fill="#5b6472">answer from rows only</text>
+<rect x="340" y="30" width="190" height="86" rx="8" fill="#e9f4ef" stroke="#4f9c82"/><text x="435" y="50" text-anchor="middle" font-weight="600">Tool 1: query_hub</text><text x="435" y="68" text-anchor="middle">Fuseki hub (copied knowledge)</text><text x="435" y="82" text-anchor="middle">turbines, alarms, diagnoses, repairs,</text><text x="435" y="96" text-anchor="middle">daily aggregates, SHACL-gated</text>
+<rect x="340" y="140" width="190" height="86" rx="8" fill="#fbf3df" stroke="#c99a2e"/><text x="435" y="160" text-anchor="middle" font-weight="600">Tool 2: farm_metric</text><text x="435" y="178" text-anchor="middle">validated templates: metric, agg,</text><text x="435" y="192" text-anchor="middle">farms, window; parallel, timeouts,</text><text x="435" y="206" text-anchor="middle">unit check, names any farm down</text>
+<rect x="340" y="262" width="190" height="52" rx="8" fill="#f6f7fa" stroke="#9aa3b2" stroke-dasharray="4 3"/><text x="435" y="282" text-anchor="middle" font-weight="600">Registry (farms.csv, v2)</text><text x="435" y="298" text-anchor="middle" fill="#5b6472">endpoint, signals, units, limits, kind</text>
+<rect x="580" y="130" width="170" height="40" rx="8" fill="#e9f4ef" stroke="#4f9c82"/><text x="665" y="154" text-anchor="middle">Ontop A, PostgreSQL</text>
+<rect x="580" y="178" width="170" height="40" rx="8" fill="#e9f4ef" stroke="#4f9c82"/><text x="665" y="202" text-anchor="middle">Ontop B, PostgreSQL</text>
+<rect x="580" y="226" width="170" height="40" rx="8" fill="#fbf3df" stroke="#c99a2e"/><text x="665" y="250" text-anchor="middle">Neo4j adapter (Cypher template)</text>
+<rect x="580" y="274" width="170" height="40" rx="8" fill="#fbf3df" stroke="#c99a2e"/><text x="665" y="298" text-anchor="middle">New API adapter</text>
+<rect x="580" y="30" width="170" height="86" rx="8" fill="#f6f7fa" stroke="#9aa3b2"/><text x="665" y="52" text-anchor="middle" font-weight="600">Build job (nightly)</text><text x="665" y="70" text-anchor="middle">harvest + SHACL, farm by farm</text><text x="665" y="84" text-anchor="middle">+ daily aggregates</text><text x="665" y="98" text-anchor="middle" fill="#5b6472">keeps last good snapshot</text>
+</g>
+<g stroke="#5b6472" stroke-width="1.5" fill="none" style="stroke:#5b6472">
+<path d="M120 173 H150" marker-end="url(#a)"/><path d="M300 150 L340 90" marker-end="url(#a)"/><path d="M300 175 H340" marker-end="url(#a)"/><path d="M530 183 L580 150" marker-end="url(#a)"/><path d="M530 183 L580 198" marker-end="url(#a)"/><path d="M530 190 L580 246" marker-end="url(#a)"/><path d="M530 200 L580 294" marker-end="url(#a)"/><path d="M580 70 H530" marker-end="url(#a)"/><path d="M665 130 V116" marker-end="url(#a)"/><path d="M435 262 V226" marker-end="url(#a)"/>
+</g>
+<text x="20" y="360" fill="#5b6472">Solid arrows: question time. Knowledge path reads only the hub (fast, works if a farm is down).</text>
+<text x="20" y="376" fill="#5b6472">Measurement path asks each farm live for one aggregate; raw readings never leave the farm.</text>
+</svg>
+
+<h3>Phases</h3>
+<table>
+<tr><th>Phase</th><th>What</th><th>Done when</th></tr>
+<tr><td class="k">1 (about 4 days)</td><td>Make <code>farms.csv</code> machine-readable (signals, units, capabilities, max rows, <code>kind</code>). Add <code>farm_metric</code> with 3 templates: aggregate per farm, per turbine, per month. Add it as a second tool in <code>assistant.py</code>. Keep <code>SERVICE</code> banned in LLM text.</td><td>"Average power across farms, which is highest" returns both farms with units, time window and a note about normalising by rated power.</td></tr>
+<tr><td class="k">2 (about 2 days)</td><td>Failure handling: per-farm timeout, named missing farms in the answer, stale-snapshot age shown in answers, scheduled hub rebuild.</td><td>Stopping one Ontop yields a partial answer that says which farm is missing.</td></tr>
+<tr><td class="k">3 (about 4 days)</td><td>Daily aggregates materialised into the hub with a SHACL shape; Neo4j harvested through the build and a Cypher adapter for <code>farm_metric</code>.</td><td>Trend-before-alarm questions answered on the hub alone.</td></tr>
+<tr><td class="k">4 (optional)</td><td>LLM-planned multi-step queries; authenticated proxies and query allow-lists in front of each endpoint; a data-space connector only if farms are separate companies.</td><td>Decided by real partners.</td></tr>
+</table>
+
+<h3>Adding a new API source</h3>
+<ol>
+<li><b>Knowledge records:</b> write a small exporter that emits wind-core terms (like <code>neo4j_farm_c.py</code>), run it in the build, SHACL-gate it, add a row to the registry.</li>
+<li><b>Measurements:</b> either load the readings into a small SQL table and put an Ontop mapping on it (then it behaves like farm A or B), or write a 30-line adapter that implements <code>farm_metric</code> by calling the API. Declare its signals, units and limits in the registry.</li>
+<li>Nothing else changes: the assistant finds it through the registry.</li>
+</ol>
+
+<h2>6. Honest verdict</h2>
+<div class="box y">
+<p><b>Is the current design acceptable?</b> Yes, for what it claims: it is sound for knowledge, it is honest about copies and staleness, and it fails safely. The README already says time series stay at the farm. It is <b>not</b> acceptable as the whole answer for a "ask anything across farms" assistant, because a whole class of obvious questions returns nothing, and today the assistant cannot even say that those need a different path.</p>
+<p><b>Is your federated proposal right?</b> Half right. For measurements it is the correct idea, and my test shows it already works at 0.6 s. As a replacement for the hub it would be a step back: joins with curated knowledge became 12x slower, every farm must be up, the SHACL gate and last-good-snapshot behaviour disappear, and an LLM writing multi-endpoint SPARQL is the least reliable variant in the 2026 literature I found. What is worth keeping from your idea is the registry-driven routing and "no copy" for big data.</p>
+<p><b>Where I disagree with earlier proposals.</b> The review document (<code>KG_review_architecture_and_stack.md</code>) recommended federating knowledge with <code>SERVICE</code>. The project moved away from that, and my measurements support the move. The same document is right to avoid Trino-style stacks and to keep Neo4j out of the core.</p>
+</div>
+
+<h2>Sources</h2>
+<ul class="src">
+<li>W3C, SPARQL 1.1 Federated Query: <a href="https://www.w3.org/TR/sparql11-federated-query/">w3.org/TR/sparql11-federated-query</a></li>
+<li>Ontop guide (supported federators Denodo, Dremio, Teiid, Spark, Trino; virtual graphs): <a href="https://ontop-vkg.org/guide/">ontop-vkg.org/guide</a>; ITC case study with Trino and PostgreSQL: <a href="https://ceur-ws.org/Vol-4293/paper17.pdf">ceur-ws.org/Vol-4293/paper17</a>; SEAGraph 2024 on ontology-based data federation: <a href="https://www.inf.unibz.it/~calvanese/papers/gu-etal-SEAGraph-2024.pdf">gu-etal-SEAGraph-2024</a></li>
+<li>Optique at Siemens and Statoil: <a href="https://www.inf.unibz.it/~calvanese/papers/calv-etal-SWJ-2017.pdf">Calvanese et al., Semantic Web Journal 2017</a>; <a href="https://www.inf.unibz.it/~calvanese/papers/khar-etal-BigData-2016.pdf">Kharlamov et al., BigData 2016</a></li>
+<li>Comunica 3.0 federation release notes (self-reported benchmarks): <a href="https://comunica.dev/blog/2024-03-19-release_3_0">comunica.dev</a></li>
+<li>FedX in RDF4J: <a href="https://rdf4j.org/news/2019/10/15/fedx-joins-rdf4j/">rdf4j.org news</a>; <a href="https://rdf4j.org/javadoc/latest/org/eclipse/rdf4j/federated/optimizer/SourceSelection.html">SourceSelection javadoc</a>; FedX paper and Semagrow overview: <a href="https://arxiv.org/pdf/1503.02940v1">arXiv 1503.02940</a>; <a href="https://blog.metaphacts.com/transparent-federation-with-fedx-solving-challenges-with-new-optimization-techniques">metaphacts on FedX</a></li>
+<li>Stardog virtual graphs: <a href="https://www.stardog.com/blog/virtual-graphs-relational-data-in-stardog">Stardog blog</a>; <a href="https://community.stardog.com/t/stardog-sparql-virtual-graph/4255">forum on SPARQL virtual graphs</a>; <a href="https://Stardog.com/labs/blog/querying-heterogeneous-federations-with-stardog-9-up-to-30x-faster/">Stardog 9 federation (vendor claim)</a></li>
+<li>Agentic SPARQL, federated KGQA with MCP agents (2026): <a href="https://arxiv.org/html/2603.06582">arXiv 2603.06582</a>; RAG for federated SPARQL: <a href="https://arxiv.org/abs/2410.06062">arXiv 2410.06062</a>; AMA-KBQA: <a href="https://ceur-ws.org/Vol-4293/paper36.pdf">ceur-ws Vol-4293 paper36</a></li>
+<li>Eclipse Dataspace Components and Federated Catalog: <a href="https://projects.eclipse.org/projects/technology.edc">Eclipse EDC</a>; <a href="https://github.com/eclipse-edc/FederatedCatalog">FederatedCatalog</a>; survey of connectors: <a href="https://arxiv.org/pdf/2309.11282">arXiv 2309.11282</a></li>
+<li>Neo4j: <a href="https://neo4j.com/labs/neosemantics/5.14/reference/">neosemantics (n10s)</a>; <a href="https://neo4j.com/blog/news/neo4j-jdbc-driver-v6/">JDBC v6 SQL-to-Cypher</a> (both from the earlier review in this repo)</li>
+<li>Project evidence: <code>hub/build_hub.py</code>, <code>assistant.py</code>, <code>hub/farms.csv</code>, <code>compose.yaml</code>, <code>docs/review/KG_review_architecture_and_stack.md</code>; earlier session logs of 14 Nov 2026; timings from my own queries on 15 Nov.</li>
+</ul>
+<p class="small">Search summaries were used for sources I did not open in full (Optique evaluation numbers, Comunica and Stardog benchmarks, GraphDB and Ontop); treat those claims as the vendors' or authors' own.</p>
+</body></html>
